@@ -206,8 +206,12 @@ export const subagents = {
           await result.locator('summary').click();
           await result.locator('pre').filter({ hasText: record.result }).waitFor();
           await page.screenshot({ path: join(directory, 'subagent-expanded-activity.png'), animations: 'disabled' });
+          await page.bringToFront();
           await page.keyboard.press('Escape');
           await details.waitFor({ state: 'hidden' });
+          // The app restores focus on its next animation frame. A hosted Windows window
+          // may defer that frame until capture requests presentation.
+          await page.screenshot({ path: join(directory, 'subagent-return-to-chat.png') });
           await waitUntil(() => opener.evaluate((element, id) => element.id === id && element === document.activeElement, openerId), 'focus returned to chat card');
           await composer.fill('');
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
@@ -324,8 +328,17 @@ export const subagents = {
             await waitUntil(() => appearance.getByRole('radio', { name: view.locale, exact: true }).getAttribute('aria-checked').then(value => value === 'true'), 'language applied');
             await dialog.locator(`[role="radio"][data-theme-id="${view.theme}"]`).click();
             await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, view.theme);
-            await dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click();
+            try {
+              await dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click({ timeout: 8_000 });
+            } catch (error) {
+              // A development-page navigation can unmount Settings while the
+              // click is pending. Accept that only if it actually closed; the
+              // persisted locale/theme and inspector are still checked below.
+              if (await dialog.isVisible().catch(() => false)) throw error;
+            }
             await dialog.waitFor({ state: 'hidden' });
+            await page.waitForFunction(({ theme, locale }) => document.documentElement.dataset.theme === theme
+              && (locale === 'English' ? document.documentElement.lang.startsWith('en') : document.documentElement.lang === 'zh-CN'), view);
             const [record] = await read();
             await detailButton(record.agentId).click();
             const inspector = page.getByRole('region', { name: view.title, exact: true });
@@ -366,8 +379,11 @@ export const subagents = {
         assert.match(failed.error, /Intentional subagent provider failure/);
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
         await group.waitFor({ state: 'hidden' });
+        // The final parent reply replaces the streaming row with the disk-backed
+        // chat card. Expand that finished card before asserting its error detail.
+        await page.getByText('CHILD_FAILURE_REPORTED', { exact: true }).waitFor();
         const card = taskCard(failed.agentId);
-        await card.locator('[aria-expanded]').click();
+        await card.locator('[aria-expanded="false"]').click();
         await card.getByRole('alert').filter({ hasText: 'Intentional subagent provider failure' }).waitFor();
         await detailButton(failed.agentId).click();
         const inspector = inspectorFor(failed.agentId);

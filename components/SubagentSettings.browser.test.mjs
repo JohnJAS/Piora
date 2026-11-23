@@ -37,7 +37,9 @@ test('subagent settings preserve profile choices with readable responsive contro
       let catalogMode = 'ready', failNextSave = false, releaseCatalog;
       const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: locale === 'en' ? 'en-US' : locale });
       const errors = [];
+      const missingTranslations = [];
       page.on('pageerror', error => errors.push(error.message));
+      page.on('console', message => { if (message.text().includes('Missing translation: subagent.')) missingTranslations.push(message.text()); });
       await page.addInitScript(value => localStorage.setItem('pi-locale', value), locale);
       await page.route('http://subagent-settings.test/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
@@ -77,6 +79,13 @@ test('subagent settings preserve profile choices with readable responsive contro
       assert.equal(await card.getByRole('checkbox').count(), 2);
       const limits = card.locator('input[type="number"]');
       assert.equal(await limits.count(), 4, 'The expanded settings expose four optional limits');
+      const expectedLabels = locale === 'zh-CN'
+        ? ['最大并发数', '单次任务超时（秒）', '当前对话 Token 总预算', '结果摘要上限（字符）']
+        : ['Maximum concurrent tasks', 'Task timeout (seconds)', 'Conversation token budget', 'Result summary limit (characters)'];
+      for (const label of expectedLabels) assert.equal(await card.getByRole('spinbutton', { name: label, exact: true }).count(), 1);
+      await card.getByRole('heading', { name: locale === 'zh-CN' ? '运行限制' : 'Execution limits', exact: true }).waitFor();
+      assert.match(await card.innerText(), locale === 'zh-CN' ? /历史用量/ : /historical usage/);
+      assert.doesNotMatch(await card.innerText(), /subagent\.(?:limitsTitle|limitsHint|maxConcurrency|timeoutSeconds|maxTokens|maxResultChars|budgetHelp)/);
       assert.deepEqual(await limits.evaluateAll(inputs => inputs.map(input => input.value)), ['4', '0', '0', '8000']);
       await limits.first().fill('5');
       await save(() => limits.first().blur());
@@ -188,6 +197,7 @@ test('subagent settings preserve profile choices with readable responsive contro
         assert.equal(catalogRequests.at(-1).refresh, '1');
       }
       assert.ok(catalogRequests.every(request => request.cwd === cwd), 'Discovery uses the current project scope on every retry');
+      assert.deepEqual(missingTranslations, []);
       assert.deepEqual(errors, []);
       await page.close();
     }

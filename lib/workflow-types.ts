@@ -84,6 +84,10 @@ export interface WorkflowAction {
   objective?: string;
   criteria?: WorkflowCriterion[];
   planMarkdown?: string;
+  /** User feedback submitted together with a Plan revision. */
+  feedback?: string;
+  /** Per-attempt identity so a cancelled submission can be retried safely. */
+  submissionId?: string;
 }
 export interface WorkflowActionResult { snapshot: WorkflowSnapshot; prompt?: string }
 export const DEFAULT_WORKFLOW_TURN_BUDGET = 10;

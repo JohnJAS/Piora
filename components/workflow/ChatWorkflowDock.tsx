@@ -34,7 +34,6 @@ export interface ChatWorkflowDockProps {
   onAcceptSnapshot: (snapshot: WorkflowSnapshot) => void;
   onRefresh: () => Promise<void>;
   onOpenTaskChanges?: () => void;
-  onSendPlanRevision: (feedback: string) => Promise<void>;
   onFocusComposer: () => void;
   onEnterGoalDraft: (inlineObjective?: string) => void;
   replaceGoalRequest: { inlineObjective?: string } | null;
@@ -66,7 +65,6 @@ export function ChatWorkflowDock({
   onAcceptSnapshot,
   onRefresh,
   onOpenTaskChanges,
-  onSendPlanRevision,
   onFocusComposer,
   onEnterGoalDraft,
   replaceGoalRequest,
@@ -97,16 +95,20 @@ export function ChatWorkflowDock({
     };
   }, [sessionId, onAcceptSnapshot, onAction, running, busy]);
 
-  const handleRevisePlanWithFeedback = useCallback((feedback: string) => {
-    void onAction("revise").then((ok) => {
-      if (!ok) return;
-      if (feedback.trim()) {
-        void onSendPlanRevision(feedback.trim());
-      } else {
-        onFocusComposer();
-      }
-    });
-  }, [onAction, onSendPlanRevision, onFocusComposer]);
+  const feedbackKey = `${sessionId ?? ""}:${snapshot?.current?.id ?? ""}:${snapshot?.current?.version ?? ""}`;
+  const [planFeedback, setPlanFeedback] = useState<Record<string, string>>({});
+  const handleRevisePlanWithFeedback = useCallback(async (feedback: string) => {
+    const value = feedback.trim();
+    const ok = await onAction("revise", value ? { feedback: value } : undefined);
+    if (ok) {
+      setPlanFeedback(current => {
+        if (!(feedbackKey in current)) return current;
+        const next = { ...current }; delete next[feedbackKey]; return next;
+      });
+      if (!value) onFocusComposer();
+    }
+    return ok;
+  }, [feedbackKey, onAction, onFocusComposer]);
 
   const handleConfirmReplaceGoal = useCallback(() => {
     const queuedObjective = replaceGoalRequest?.inlineObjective;
@@ -142,6 +144,8 @@ export function ChatWorkflowDock({
         permissionSaving={permissionSaving}
         onToolPermissionChange={onToolPermissionChange}
         onApprovePlan={() => void onAction("approve")}
+        planFeedback={planFeedback[feedbackKey] ?? ""}
+        onPlanFeedbackChange={(value) => setPlanFeedback(current => ({ ...current, [feedbackKey]: value }))}
         onRevisePlanWithFeedback={handleRevisePlanWithFeedback}
         onDismissPlan={() => void onAction("exit")}
       />

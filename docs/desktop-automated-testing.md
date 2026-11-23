@@ -4,6 +4,12 @@
 
 默认 `settings-theme` 场景通过设置按钮打开外观界面，点击深色主题，核对实际页面主题与持久设置，刷新后再次核对，再切换浅色并重复验证。它没有模型调用，不需要供应商凭据，也不直接写入主题状态。另有 Windows 专用的 `stop-shell` / `stop-bash` 停止场景，使用本地模型响应夹具和真实 shell 进程，见下文。
 
+## Windows 内置浏览器菜单
+
+`browser-menu` 用独立 Windows 配置验证网页操作、联系人、并发下载、历史、清理及重启。`browser-menu-appearance` 在真实窗口中保存菜单、导入、个人资料下拉、设置页和近期下载等截图，并实际选择有独立历史的测试资料。工作区合成图按原生控件的位置叠加同一时刻的聊天、网页和透明弹窗。个人资料全部由夹具生成，包含两项同名记录。`browser-menu-native` 操作系统文件选择器和 Windows 打印对话框，使用 Microsoft Print to PDF 和 Windows 自带的 PDF 渲染器检查打印专用样式。三种场景均可用 `--executable` 核对 CI 生成的桌面程序。手动启动安装包比较工作流时可同时选择 `browser_acceptance`，在隔离的 Windows 托管机检查安装后的程序。安装版场景实际显示主窗口，通过聊天右侧的工具菜单打开网页。工作流保存每项报告、资料菜单截图和失败画面。
+
+`node scripts/test-desktop-browser-navigation.mjs` 使用独立 Electron 配置检查真实 Agent 在设备预览显示、收起和恢复后的点击。加 `--dpi=1.25` 或 `--dpi=1.5` 可在单个测试进程下核对相应显示比例与菜单定位。
+
 ## 使用量月度与每日看板
 
 `npm run test:desktop:e2e -- --scenario usage-dashboard --step-timeout-ms 120000` 在独立 profile 中准备合成会话文件，通过真实 Electron 设置界面与本地鉴权 API 验证月度聚合、日期切换、逐日下钻、分时用量、空数据、可选范围、刷新、键盘切换和重载，并保存明暗主题与窄视口截图。使用量接口不 mock，不调用模型、不复制用户会话或凭据。
@@ -27,7 +33,7 @@ $env:PIORA_SUBAGENT_REAL_READER_MODEL = '读取服务商/模型ID'
 node scripts/run-desktop-e2e.mjs --scenario subagents-real --executable 'C:\实际目录\Piora.exe' --timeout-ms 1800000 --step-timeout-ms 420000
 ```
 
-未指定时默认读取 `~/.pi/agent`，主模型为 `deepseek/deepseek-flash`，读取模型为 `new-provider/qwen3.8-max`。桌面设置过自定义 Agent 目录时应使用该目录；HTTP 200 仅证明请求到达，完整验收仍核对实际子工具、程序结果、轨迹隔离、用量与继续上下文。认证失败、模型执行不符或中断均保留为失败，不使用脚本模型替代。
+未指定时默认读取 `~/.pi/agent`，主模型为 `deepseek/deepseek-flash`，读取模型为 `new-provider/qwen3.8-max`。桌面设置过自定义 Agent 目录时应使用该目录，`result.json` 记录本次采用的路径和模型。HTTP 200 仅证明服务商接受请求，完整验收还会核对子代理实际使用的工具、程序结果、轨迹隔离、用量与继续上下文。认证失败、模型执行不符或中断均记录为失败。
 
 ## 对话内容右键菜单
 
@@ -50,7 +56,7 @@ npm ci
 npm run test:desktop:e2e
 ```
 
-命令会打开可见的 Piora Dev 窗口。不要在测试期间手动操作这个窗口。首次启动可能需要下载仓库指定版本的 Electron，并等待 Next 冷编译；默认整次运行期限为 10 分钟。这里编译的是开发所需的 worker 和桌面代码，不运行 `next build`，不生成发布安装包。
+命令会打开可见的 Piora Dev 窗口。不要在测试期间手动操作这个窗口。首次运行前需准备锁文件指定的 Electron 运行时，启动时需要等待 Next 冷编译。默认整次运行期限为 10 分钟。测试编译开发所需的 worker 和桌面代码，不运行 `next build`，不生成发布安装包。
 
 ```powershell
 npm run test:desktop:e2e -- --list
@@ -65,7 +71,9 @@ npm run test:desktop:e2e -- --scenario settings-theme --timeout-ms 600000 --step
 
 ## 隔离与退出
 
-每次运行创建 `.verification/desktop-e2e-<随机编号>/`，其中包含独立的 Electron profile、Pi agent 目录、Next 输出和临时 tsconfig。默认场景不会复制本机模型配置、认证文件或个人会话；仅显式选择 `subagents-real` 时按上文复制所选服务商配置并在结束时清理。子进程环境只继承运行所需的系统变量，不继承供应商密钥、Node 注入选项及外部 Pi 路径覆盖；不宣称应用所有后台网络均被拦截。
+每次运行创建 `.verification/desktop-e2e-<随机编号>/`，其中包含独立的 Electron profile、Pi agent 目录、Next 输出和临时 tsconfig。默认场景不会复制本机模型配置、认证文件或个人会话；仅显式选择 `subagents-real` 时按上文复制所选服务商配置并在结束时清理。子进程环境只继承运行所需的系统变量，不继承供应商密钥、Node 注入选项及外部 Pi 路径覆盖；设置 `PI_OFFLINE=1` 防止 SDK 自动下载缺失的 fd/rg，显式配置的真实模型调用仍可进行，这不代表应用所有后台网络均被拦截。
+
+开发桌面场景启动前会确认本地 Electron 可执行文件，缺失时报告配置错误。可以通过 `--electron-dist` 指向已有的运行时目录。独立场景的 Next.js 启动等待时间随 `--step-timeout-ms` 调整，最短 60 秒，最长 300 秒。
 
 同一 checkout 的测试运行器使用独占锁，拒绝并行运行。桌面 TypeScript 输出及开发预处理仍由原启动器管理，因此**不要在同一 checkout 同时运行普通 `dev:desktop`**；多个开发任务分别使用 worktree。这一首版不承诺同一 checkout 内任意开发进程的并发隔离。
 
@@ -188,7 +196,7 @@ node --test lib/desktop-e2e.test.mjs
 
 ## 浏览器登录自动继续
 
-`npm run test:desktop:e2e -- --scenario browser-login` 使用隔离的真实 Electron 开发窗口、本地确定性模型和本地登录页面，验证发送任务后自动展开浏览器、没有登录卡片或完成按钮、通过原生页面 UI 登录后继续工具调用并回复；同时核对批准模式、能力包菜单和新会话快捷卡片已移除。模型与登录凭据均为合成夹具，不代表真实模型、第三方账号、SSO、后台 Playwright 或安装包验收。产物和失败清理由同一生命周期入口管理。
+`npm run test:desktop:e2e -- --scenario browser-login` 使用隔离的真实 Electron 开发窗口、本地确定性模型和本地登录页面，验证发送任务后自动展开浏览器、没有登录卡片或完成按钮、通过原生页面 UI 登录后继续工具调用并回复；夹具关闭工具批准开关，核对批准模式入口隐藏，并检查能力包菜单和新会话快捷卡片。模型与登录凭据均为合成夹具，不代表真实模型、第三方账号、SSO、后台 Playwright 或安装包验收。产物和失败清理由同一生命周期入口管理。
 
 ### Agent 浏览器上传
 
@@ -200,7 +208,7 @@ node --test lib/desktop-e2e.test.mjs
 node scripts/run-desktop-e2e.mjs --scenario plan-goal --timeout-ms 1200000 --step-timeout-ms 180000
 ```
 
-`plan-goal` 使用仅监听 loopback 的 OpenAI-compatible 确定性响应服务和独立 Pi agent 配置。场景先确认实验室功能默认关闭、新任务没有模式选择器，再通过“设置 → 实验室”开关启用。聊天发送、模式选择、计划修改和确认、预算调整、暂停、恢复及取消都通过真实 Electron UI 完成；读取配置/工作流 API 和合成文件仅用于核对结果，不直接写配置。模型会故意尝试一次规划阶段写入，测试要求文件不存在；确认计划后则通过真实 SDK 写入另一个合成文件。
+`plan-goal` 使用仅监听 loopback 的 OpenAI-compatible 确定性响应服务和独立 Pi agent 配置。为避免开发模式冷编译耗尽聊天事件流连接时限，场景先通过 API 创建独立的预热会话并等待 SSE 握手，不发送模型请求；实际 Plan 和 Goal 仍由 UI 新建和操作。场景确认实验室功能默认关闭、新任务没有模式选择器，再通过“设置 → 实验室”开关启用。聊天发送、模式选择、计划修改和确认、预算调整、暂停、恢复及取消都通过真实 Electron UI 完成；读取配置/工作流 API 和合成文件仅用于核对结果，不直接写配置。模型会故意尝试一次规划阶段写入，测试要求文件不存在；确认计划后则通过真实 SDK 写入另一个合成文件。
 
 Goal 场景验证两轮预算停止、只增加预算不会自动恢复、用户恢复后证据记录、暂停后的刷新恢复、取消及进程重启。暂停和重启期间本地模型挂起实际请求，测试核对请求连接被取消；没有使用接口直接伪造工作流状态。重启沿用同一隔离 profile，恢复前要求目标已暂停且没有新模型请求。原始计划版本与后续历史也在结果中核对。
 

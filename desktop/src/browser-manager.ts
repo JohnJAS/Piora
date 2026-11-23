@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { browserDataRoot } from "./browser/import-sources.js";
 import { createHash } from "node:crypto";
 import { loginEvidence, loginEvidenceAccepted, matchesLoginReturn, type LoginEvidence } from "./credential-sso.js";
 import {
@@ -22,7 +23,9 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { BrowserCookieStore } from "./browser-cookie-store.js";
-import { BrowserPreferences, browserDownloadPath, browserFontPreferences, browserOrigin } from "./browser-preferences.js";
+import { BrowserPreferences, browserFontPreferences, browserOrigin } from "./browser-preferences.js";
+import { BrowserTools } from "./browser/tools.js";
+import type { BrowserTarget } from "./browser/contracts.js";
 import { BrowserPermissions } from "./browser-permissions.js";
 import { getCredentialVault } from "./credential-vault-ipc.js";
 import { BROWSER_LOGIN_STATE_SCRIPT, readBrowserLoginState } from "./browser-login.js";
@@ -54,6 +57,7 @@ const MAX_TABS = 20;
 const MANUAL_BROWSER_SESSION_ID = "__piora_browser_manual__";
 
 export interface DesktopBrowserState {
+  navigationEpoch?: number;
   zoomFactor?: number;
   tabCount?: number;
   tabLimit?: number;
@@ -232,19 +236,8 @@ function validBounds(value: unknown, window: BrowserWindow): Rectangle | null {
   return { x, y, width, height };
 }
 
-function chromeUserDataDirectory(): string | null {
-  if (process.platform === "win32") {
-    const localAppData = process.env.LOCALAPPDATA?.trim();
-    return localAppData ? join(localAppData, "Google", "Chrome", "User Data") : null;
-  }
-  if (process.platform === "darwin") {
-    return join(app.getPath("home"), "Library", "Application Support", "Google", "Chrome");
-  }
-  return join(app.getPath("home"), ".config", "google-chrome");
-}
-
 function readChromeBookmarks(): ChromeBookmarkImportResult {
-  const userData = chromeUserDataDirectory();
+  const userData = browserDataRoot("chrome");
   if (!userData) return { bookmarkCount: 0, profiles: [] };
 
   let profileDirectories: string[];
@@ -315,36 +308,10 @@ export class DesktopBrowserManager {
   private storageFlushChain: Promise<void> = Promise.resolve();
   private readonly preferences: BrowserPreferences;
   private defaultDownloadDirectory = "";
-  private readonly downloadPaths = new Set<string>();
+  private readonly tools: BrowserTools;
   private readonly handleCookieChanged = (): void => this.scheduleStorageFlush();
-  private readonly handleDownload = (_event: Event, item: DownloadItem, contents: WebContents): void => {
-    if (!this.tabs.some((tab) => tab.view.webContents === contents)) return;
-    const preferences = this.preferences.downloads(this.defaultDownloadDirectory);
-    let reserved: string | undefined;
-    try {
-      mkdirSync(preferences.effectiveDirectory, { recursive: true });
-      const path = browserDownloadPath(preferences.effectiveDirectory, item.getFilename(), this.downloadPaths);
-      if (preferences.askEachTime) item.setSaveDialogOptions({ defaultPath: path });
-      else { reserved = path; this.downloadPaths.add(path); item.setSavePath(path); }
-    } catch (error) {
-      _event.preventDefault();
-      this.log.warn("Unable to save browser download in the selected directory", error);
-      this.sendDownload({ filename: item.getFilename(), path: "", percent: 0, state: "interrupted" });
-      return;
-    }
-    const send = (state: DesktopBrowserDownload["state"]): void => {
-      const total = item.getTotalBytes();
-      const percent = total > 0 ? Math.round((item.getReceivedBytes() / total) * 100) : 0;
-      this.sendDownload({
-        filename: item.getFilename(),
-        path: item.getSavePath(),
-        percent: Math.max(0, Math.min(100, percent)),
-        state,
-      });
-    };
-    send("progressing");
-    item.on("updated", (_downloadEvent, state) => send(state));
-    item.once("done", (_downloadEvent, state) => { if (reserved) this.downloadPaths.delete(reserved); send(state); });
+  private readonly handleDownload = (event: Event, item: DownloadItem, contents: WebContents): void => {
+    if (this.tabs.some(tab => this.liveContents(tab) === contents)) this.tools.transfers.start(event, item);
   };
 
   constructor(
@@ -357,6 +324,26 @@ export class DesktopBrowserManager {
     this.preferences = new BrowserPreferences(join(app.getPath("userData"), "browser-preferences.json"));
     this.cookieStore = new BrowserCookieStore(join(app.getPath("userData"), "browser-session-cookies.enc"), this.browserSession.cookies, safeStorage);
     this.storageReady = this.cookieStore.restore().catch(() => this.log.warn("Unable to restore browser session cookies"));
+    this.tools = new BrowserTools({
+      window, session: this.browserSession, trusted: isTrustedSender,
+      locate: target => this.locatePage(target),
+      empty: target => Boolean(target && target.sessionId === this.displayedSessionId && target.tabId === "" && !this.activeTab(this.displayedSessionId)),
+      zoom: (target, action) => this.changeZoom(this.locatePage(target).tab, action),
+      viewportChanged: () => this.updateVisibility(),
+      permissions: () => this.browserPermissions!,
+      preferences: () => this.preferences.downloads(this.defaultDownloadDirectory),
+      clearSites: () => this.clearSiteData(),
+      writeSites: operation => this.withStorage(async () => {
+        try { return await operation(); }
+        finally { await this.saveSiteState(); }
+      }),
+      vault: () => this.credentialVault(),
+      download: row => this.sendDownload({
+        filename: row.filename, path: row.path,
+        percent: row.total > 0 ? Math.min(100, Math.round(100 * row.received / row.total)) : 0,
+        state: row.state === "paused" ? "progressing" : row.state,
+      }),
+    });
     this.configureSession();
     this.createTab("about:blank", false, MANUAL_BROWSER_SESSION_ID);
     this.registerIpc();
@@ -409,6 +396,7 @@ export class DesktopBrowserManager {
     if (this.storageFlushTimer) clearTimeout(this.storageFlushTimer);
     this.storageFlushTimer = undefined;
     void this.flushStorage().catch((error) => this.log.warn("Unable to persist browser state while closing", error));
+    this.tools.close();
     this.browserSession.off("will-download", this.handleDownload);
     this.browserSession.cookies.off("changed", this.handleCookieChanged);
     for (const tab of this.tabs.splice(0)) {
@@ -423,16 +411,44 @@ export class DesktopBrowserManager {
     this.removeIpc();
   }
 
+  private withStorage<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.storageFlushChain.catch(() => undefined).then(() => this.storageReady).then(operation);
+    this.storageFlushChain = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private async saveSiteState() {
+    await this.browserSession.cookies.flushStore();
+    await this.cookieStore.save();
+  }
+
   flushStorage(): Promise<void> {
     this.browserSession.flushStorageData();
-    this.storageFlushChain = this.storageFlushChain
-      .catch(() => undefined)
-      .then(async () => {
-        await this.storageReady;
-        await this.browserSession.cookies.flushStore();
-        await this.cookieStore.save();
-      });
-    return this.storageFlushChain;
+    return this.withStorage(() => this.saveSiteState());
+  }
+
+  private clearSiteData(): Promise<void> {
+    return this.withStorage(async () => {
+      await this.cookieStore.forget();
+      await this.browserSession.clearData({ dataTypes: ["cookies", "localStorage", "indexedDB", "fileSystems", "serviceWorkers", "webSQL", "backgroundFetch"] });
+      await this.saveSiteState();
+    });
+  }
+
+  private locatePage(target: BrowserTarget) {
+    const tab = target && this.activeTab(this.displayedSessionId);
+    const contents = tab && this.liveContents(tab);
+    if (!tab || !contents || tab.sessionId !== target.sessionId || tab.id !== target.tabId || this.destroyed
+      || (target.navigationEpoch !== undefined && target.navigationEpoch !== (tab.navigationEpoch ?? 0))) {
+      throw new Error("Browser tab changed");
+    }
+    const epoch = tab.navigationEpoch;
+    const current = () => !this.destroyed && tab.sessionId === this.displayedSessionId && this.activeTab(this.displayedSessionId) === tab
+      && this.liveContents(tab) === contents && tab.navigationEpoch === epoch;
+    return { tab, contents, protected: Boolean(tab.vaultProtected), current,
+      focusIfVisible: () => {
+        if (current() && this.requestedVisible && tab.attached && this.window.isFocused()) contents.focus();
+      } };
   }
 
   private scheduleStorageFlush(): void {
@@ -495,6 +511,7 @@ export class DesktopBrowserManager {
 
   private registerIpc(): void {
     this.removeIpc();
+    this.tools.register();
     ipcMain.handle(BROWSER_PREFERENCES_CHANNEL, (event, input: unknown) => {
       if (!this.isTrustedSender(event)) throw new Error("Untrusted browser preferences request");
       if (input === undefined) return this.preferences.downloads(this.defaultDownloadDirectory);
@@ -565,6 +582,7 @@ export class DesktopBrowserManager {
     const id = `tab-${this.nextTabId++}`;
     const view = this.createBrowserView(popupOptions);
     const tab: BrowserTab = { attached: false, id, loading: false, sessionId, title: "", view };
+    this.tools.devices.get(id);
     this.installTabEvents(tab);
     this.tabs.push(tab);
     if (activate || !this.activeTabIds.has(sessionId)) this.activeTabIds.set(sessionId, id);
@@ -636,6 +654,12 @@ export class DesktopBrowserManager {
     const view = tab.view;
     const contents = view.webContents;
     if (!contents || contents.isDestroyed()) throw new Error("Browser tab is closed.");
+    this.tools.bindTab(contents, { sessionId: tab.sessionId, tabId: tab.id }, {
+      current: () => !this.destroyed && tab.sessionId === this.displayedSessionId && this.activeTab(this.displayedSessionId) === tab && this.liveContents(tab) === contents,
+      recordable: () => !this.destroyed && !tab.vaultProtected && !tab.discarding,
+      focusHost: () => this.window.webContents.focus(),
+      error: error => this.log.warn("Browser page command failed", error),
+    });
     contents.on("ipc-message-sync", (event, channel, value: unknown) => {
       if (channel !== "piora:credential-policy") return;
       event.returnValue = { allowed: false };
@@ -839,6 +863,7 @@ export class DesktopBrowserManager {
       tabLimit: MAX_TABS,
       idleTabCount: this.agentControl?.idleTabIds().length ?? 0,
       activeTabId: active?.id ?? "",
+      navigationEpoch: active?.navigationEpoch ?? 0,
       canGoBack: contents ? contents.navigationHistory.canGoBack() : false,
       canGoForward: contents ? contents.navigationHistory.canGoForward() : false,
       loading: active?.loading ?? false,
@@ -885,6 +910,7 @@ export class DesktopBrowserManager {
       && this.window.isVisible()
       && !this.window.isMinimized(),
     );
+    this.tools.pages.activeChanged(active && this.liveContents(active));
     const held = new Map((this.agentControl?.heldTabs() ?? []).map((entry) => [entry.id, entry.bounds]));
     let attachmentChanged = false;
     for (const tab of this.tabs) {
@@ -899,7 +925,7 @@ export class DesktopBrowserManager {
       const visible = shouldShow && tab === active && tab.sessionId === this.displayedSessionId;
       const hold = !visible ? held.get(tab.id) : undefined;
       if (visible && this.bounds) {
-        tab.view.setBounds(this.bounds);
+        this.tools.devices.present(tab.id, tab.view, this.bounds);
         if (!tab.attached) {
           this.window.contentView.addChildView(tab.view);
           tab.attached = true;
@@ -908,7 +934,7 @@ export class DesktopBrowserManager {
       } else if (hold) {
         // A hidden agent tab stays attached offscreen. Detached or 0x0 views
         // stop producing frames, so CDP input and capturePage would time out.
-        tab.view.setBounds(hold);
+        this.tools.devices.present(tab.id, tab.view, hold);
         if (!tab.attached) {
           this.window.contentView.addChildView(tab.view);
           tab.attached = true;
@@ -1076,6 +1102,7 @@ export class DesktopBrowserManager {
     }
     const [tab] = this.tabs.splice(index, 1);
     if (!tab) return;
+    this.tools.devices.forget(tabId);
     if (tab.attached && !this.window.isDestroyed()) this.window.contentView.removeChildView(tab.view);
     tab.attached = false;
     if (this.liveContents(tab)) tab.view.webContents.close();
@@ -1568,6 +1595,11 @@ export class DesktopBrowserManager {
       restoreTab: (tabId: string) => this.restoreTab(tabId),
       isShowing: (tabId: string) => this.showingTab(tabId),
       panelBounds: () => (this.bounds ? { ...this.bounds } : null),
+      deviceInputScale: (tabId: string) => this.tools.devices.inputScale(this.requireLiveTab(tabId).view),
+      presentDevice: (tabId: string, bounds: Rectangle, force = false) => {
+        const tab = this.findTab(tabId);
+        return Boolean(tab && !tab.unloaded && this.tools.devices.present(tabId, tab.view, bounds, force));
+      },
       setBounds: (tabId: string, bounds: { x: number; y: number; width: number; height: number }) => {
         const tab = this.findTab(tabId);
         if (!tab || tab.unloaded) return;

@@ -37,7 +37,7 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     root: __dirname,
-    rules: Object.fromEntries(["clipboard-archive.ts", "clipboard-database.ts", "clipboard-types.ts", "clipboard-content.ts", "clipboard-messages.ts"].map((file) => [file, {
+    rules: Object.fromEntries(["clipboard-archive.ts", "clipboard-database.ts", "clipboard-types.ts", "clipboard-content.ts", "clipboard-messages.ts", "device-display.ts"].map((file) => [file, {
       loaders: ["./scripts/desktop-dev-loader.cjs"],
       as: "*.mjs",
     }])),

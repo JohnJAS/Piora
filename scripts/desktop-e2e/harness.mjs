@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 import { abortable, acquireRunLock, isolatedEnvironment, portOpen, reservePort, startProcess, stopProcess, waitUntil } from './lifecycle.mjs';
 
@@ -12,6 +12,16 @@ function gitIdentity(root) {
 }
 
 async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort, scenario, electronDist, executable }) {
+  if (!executable) {
+    // Requiring the Electron package can install its runtime as a side effect.
+    // A desktop test should fail at setup when the local runtime is absent.
+    const electronPackage = join(root, 'node_modules', 'electron');
+    electronDist = electronDist ? resolve(electronDist) : join(electronPackage, 'dist');
+    const binary = (await readFile(join(electronPackage, 'path.txt'), 'utf8').catch(() => '')).trim() || 'electron';
+    if (!await stat(join(electronDist, binary)).then(info => info.isFile(), () => false)) {
+      throw new Error(`Local Electron runtime unavailable at ${join(electronDist, binary)}. Pass --electron-dist pointing to an existing Electron installation.`);
+    }
+  }
   // Packaged desktop rejects lower ports and would silently choose a different
   // origin. Some Windows hosts also allocate low OS ephemeral ports.
   const appPort = await reservePort(port, executable ? 20000 : 0);
@@ -37,7 +47,10 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     // The executable may be installed or extracted from a published installer.
     // Installation provenance is supplied by the caller's artifact verification.
     report.application = 'packaged';
-  } else report.application = 'development';
+  } else {
+    report.application = 'development';
+    env.PIORA_DESKTOP_DEV_NEXT_READY_TIMEOUT_MS = String(Math.min(300_000, Math.max(60_000, stepTimeoutMs)));
+  }
   const origin = `http://127.0.0.1:${appPort.port}`, debugging = `http://127.0.0.1:${debugLease.port}`;
   report.origin = origin;
   report.debugging = debugging;
@@ -53,7 +66,11 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   const start = (script, packaged = false) => {
     signal.throwIfAborted();
     const handle = startProcess(packaged ? executable : process.execPath,
-      packaged ? [`--remote-debugging-port=${paths.debugPort}`] : [join(root, script)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      packaged ? [`--remote-debugging-port=${paths.debugPort}`] : [join(root, script)], {
+        cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
+        // Win32 SW_HIDE also hides the packaged GUI. Its WebContentsViews attach only to a visible host.
+        windowsHide: !packaged,
+      });
     handle.child.stdout.pipe(log, { end: false }); handle.child.stderr.pipe(log, { end: false });
     registerCleanup(() => stopProcess(handle));
     return handle;
@@ -94,6 +111,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
       if (!browser.isConnected()) throw new Error('Electron disconnected before its application window opened');
       return browser.contexts().flatMap(context => context.pages()).find(candidate => candidate.url().startsWith(origin + '/'));
     }, { signal, timeoutMs: 600_000, label: 'Piora application window' });
+    await page.bringToFront();
     page.setDefaultTimeout(stepTimeoutMs);
     page.setDefaultNavigationTimeout(stepTimeoutMs);
     page.on('pageerror', error => pageErrors.push(error.message));

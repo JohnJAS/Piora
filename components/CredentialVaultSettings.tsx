@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AliIcon } from "./AliIcon";
+import browserStyles from "./workspace/browser/BrowserTools.module.css";
 import { useI18n } from "@/hooks/useI18n";
 import type { VaultEntry, VaultRequest, VaultSnapshot } from "@/desktop/src/credential-vault-types";
 import type { SsoRule } from "@/desktop/src/credential-sso";
@@ -9,7 +11,8 @@ import styles from "./CredentialVaultSettings.module.css";
 const empty: Partial<VaultEntry> = { name: "", url: "", username: "", password: "", notes: "", group: "" };
 const emptyRule: Partial<SsoRule> = { authOrigin: "", returnUrl: "", evidence: "dom", cookieName: "" };
 
-export function CredentialVaultSettings() {
+export function CredentialVaultSettings({ browserPage = false, importPasswords }: { browserPage?: boolean; importPasswords?(): void } = {}) {
+  const [tab, setTab] = useState<"passwords" | "settings">("passwords");
   const { locale } = useI18n();
   const copy = (cn: string, en: string) => locale === "zh-CN" ? cn : en;
   const [state, setState] = useState<VaultSnapshot>();
@@ -55,13 +58,29 @@ export function CredentialVaultSettings() {
     ...(state.unlocked ? state.entries : []).map(item => ({ ...item, source: "manual" as const, enabled: item.autoLogin === true })),
     ...(state.remembered?.entries ?? []).map(item => ({ ...item, source: "remembered" as const })),
   ].filter(item => `${state.unlocked ? `${item.name ?? ""} ${item.group ?? ""}` : ""} ${item.url}`.toLowerCase().includes(search.toLowerCase()));
-  return <section className={`${styles.card} ${styles.remembered}`} aria-label={copy("网页登录账户", "Website accounts")}>
-    <h3>{copy("网页登录账户", "Website accounts")}</h3>
-    <p>{copy("成功登录后默认加密记住账户并自动登录，无需解锁。解锁凭据库后可管理详情、手动添加账户并备份。验证码仍需你完成。", "Successful sign-ins are remembered with encryption and used automatically without unlocking. Unlock the vault to manage details, add accounts and create backups. Verification codes remain manual.")}</p>
+  return <section className={browserPage ? browserStyles.passwordPage : `${styles.card} ${styles.remembered}`} data-settings-id={browserPage ? "data.websiteAccounts" : undefined} aria-label={copy("网页登录账户", "Website accounts")}>
+    {browserPage && <>
+      <div role="tablist" aria-label={copy("密码管理器", "Password manager")} className={browserStyles.segments}>
+        {(["passwords", "settings"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab===key} onClick={() => setTab(key)}>{key === "passwords" ? copy("密码", "Passwords") : copy("设置", "Settings")}</button>)}
+      </div>
+      <label className={browserStyles.passwordSearch}><AliIcon name="search" size={16}/><input type="search" aria-label={copy("搜索密码", "Search passwords")} placeholder={copy("搜索密码", "Search passwords")} value={search} onChange={event => {setSearch(event.target.value); if (event.target.value) setTab("passwords");}} /></label>
+    </>}
+    {!browserPage && <h3>{copy("网页登录账户", "Website accounts")}</h3>}
+    {!browserPage && <p>{copy("成功登录后默认加密记住账户并自动登录，无需解锁。解锁凭据库后可管理详情、手动添加账户并备份。验证码仍需你完成。", "Successful sign-ins are remembered with encryption and used automatically without unlocking. Unlock the vault to manage details, add accounts and create backups. Verification codes remain manual.")}</p>}
     {!state.available && <p role="status">{copy("系统加密不可用，无法保存网页登录账户。", "System encryption is unavailable; website accounts cannot be saved.")}</p>}
-    <fieldset disabled={busy || !state.available}>
-      <label className={styles.toggle}><input type="checkbox" checked={state.remembered?.enabled ?? true} onChange={event => { void request({ action: "remember-configure", enabled: event.target.checked }); }} />{copy("自动保存网页登录账户并自动登录", "Remember website accounts and sign in automatically")}</label>
-      <label>{copy("搜索名称、站点或分组", "Search name, site or group")}<input value={search} onChange={event => setSearch(event.target.value)} /></label>
+    {browserPage && tab === "settings" && <div className={browserStyles.settingsRows}>
+      <label className={browserStyles.option}><span>{copy("自动保存网页登录账户并自动登录", "Remember website accounts and sign in automatically")}<small>{copy("在支持的网站登录成功后，加密保存账户供下次使用。", "Save accounts locally after signing in to supported sites.")}</small></span>
+        <input className={browserStyles.switch} aria-label={copy("自动保存网页登录账户并自动登录", "Remember website accounts and sign in automatically")} type="checkbox" checked={state.remembered?.enabled ?? true} disabled={busy || !state.available} onChange={e => void request({ action: "remember-configure", enabled: e.target.checked })} /></label>
+      <label className={browserStyles.option}><span>{copy("自动填写密码", "Fill passwords automatically")}<small>{copy("凭据库解锁后，自动填写有唯一匹配账户的登录页。", "Fill a sign-in page with one matching account while the vault is unlocked.")}</small></span>
+        <input className={browserStyles.switch} aria-label={copy("自动填写密码", "Fill passwords automatically")} type="checkbox" disabled={busy || !state.unlocked} checked={state.autofill} onChange={e => void request({ action:"configure", enabled:e.target.checked })}/></label>
+      <div className={browserStyles.option}><span>{copy("导入密码", "Import passwords")}<small>{copy("选择从浏览器导出的 CSV 文件。", "Choose a CSV exported from your browser.")}</small></span>
+        <button type="button" className={browserStyles.outlineButton} onClick={importPasswords}>{copy("选择文件", "Choose file")}</button></div>
+      <div className={browserStyles.option}><span>{copy("加密备份与恢复", "Encrypted backups")}<small>{copy("使用主密码导出或恢复已有凭据。", "Export or restore saved accounts with your master password.")}</small></span>
+        <button type="button" className={browserStyles.outlineButton} onClick={() => setManagerOpen(!managerOpen)}>{copy("管理备份", "Manage backups")}</button></div>
+    </div>}
+    {(!browserPage || tab === "passwords") && <fieldset disabled={busy || !state.available}>
+      {!browserPage && <label className={styles.toggle}><input type="checkbox" checked={state.remembered?.enabled ?? true} onChange={event => { void request({ action: "remember-configure", enabled: event.target.checked }); }} />{copy("自动保存网页登录账户并自动登录", "Remember website accounts and sign in automatically")}</label>}
+      {!browserPage && <label>{copy("搜索名称、站点或分组", "Search name, site or group")}<input value={search} onChange={event => setSearch(event.target.value)} /></label>}
       <ul aria-label={copy("账户列表", "Account list")}>{rows.map(item => <li key={`${item.source}-${item.id}`}>
         <div className={styles.accountTitle}>
           {state.unlocked && item.name ? <strong>{item.name}</strong> : null}
@@ -77,7 +96,7 @@ export function CredentialVaultSettings() {
         <div className={styles.actions}>
           {state.unlocked && <button type="button" onClick={() => { void request({ action: "fill", id: item.id }); }}>{copy("填入当前浏览器", "Fill current browser")}</button>}
           {item.source === "manual" ? <>
-            <button type="button" onClick={() => { setDraft({ ...item, password: "" }); setManagerOpen(true); }}>{copy("编辑", "Edit")}</button>
+            <button type="button" onClick={() => { setDraft({ ...item, password: "" }); setManagerOpen(true); if (browserPage) setTab("settings"); }}>{copy("编辑", "Edit")}</button>
             <button type="button" onClick={() => { if (window.confirm(copy("删除此凭据？", "Delete this credential?"))) void request({ action: "remove", id: item.id }); }}>{copy("删除", "Delete")}</button>
           </> : <>
             {state.unlocked && <button type="button" onClick={() => { void request({ action: "remember-promote", id: item.id }); }}>{copy("转入手动库以编辑", "Move to manual vault to edit")}</button>}
@@ -86,8 +105,10 @@ export function CredentialVaultSettings() {
         </div>
       </li>)}</ul>
       {!rows.length && <p>{search ? copy("没有匹配的账户。", "No matching accounts.") : copy("还没有可见账户。可登录支持的网站自动保存，或解锁后手动添加。", "No accounts are visible yet. Sign in to a supported website to save one, or unlock the vault to add one manually.")}</p>}
-    </fieldset>
+      {browserPage && <button className={browserStyles.outlineButton} type="button" onClick={() => {setTab("settings"); setManagerOpen(true);}}>{state.unlocked ? copy("管理凭据库", "Manage vault") : copy("解锁或创建凭据库", "Open vault")}</button>}
+    </fieldset>}
 
+    {(!browserPage || tab === "settings") && <div className={browserPage ? browserStyles.advanced : undefined}>
     <details data-settings-id="data.credentialVault" open={managerOpen} onToggle={event => setManagerOpen(event.currentTarget.open)}>
       <summary>{copy("凭据库（本地加密）", "Credential vault (locally encrypted)")}</summary>
       <p>{copy("主密码至少 12 位，解锁持续 10 分钟。密码始终遮盖，编辑时留空保留原密码。备份包含手动及自动记住的账户，使用主密码加密；导入后自动登录默认关闭。", "Use a master password of at least 12 characters; unlock lasts 10 minutes. Passwords stay masked; leave the password empty when editing to keep it. Backups include manual and remembered accounts, encrypted with the master password. Imported accounts have automatic sign-in disabled.")}</p>
@@ -149,6 +170,7 @@ export function CredentialVaultSettings() {
         </div>
       </fieldset>
     </details>
+    </div>}
     {error && <p role="alert">{copy("操作未完成。请检查密码、站点白名单、SSO 规则、备份及当前登录页；不符合填写规则的页面请手动登录。", "Operation not completed. Check the password, site allowlist, SSO rule, backup and current login page. Sign in manually on unsupported pages.")}</p>}
   </section>;
 }

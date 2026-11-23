@@ -80,6 +80,12 @@ export function parseWorkflowAction(value: unknown): WorkflowAction {
   const objective = parseOptionalText(input.objective, "objective", 100_000);
   const criteria = parseOptionalCriteria(input.criteria);
   const planMarkdown = parseOptionalText(input.planMarkdown, "planMarkdown", 100_000);
+  const feedback = parseOptionalText(input.feedback, "feedback", 100_000);
+  if (feedback !== undefined && input.action !== "revise") throw new WorkflowInputError("Feedback is only valid when revising a plan.");
+  const submissionId = parseOptionalText(input.submissionId, "submissionId", 128);
+  if (submissionId !== undefined && (input.action !== "revise" || feedback === undefined || !/^[a-zA-Z0-9_-]+$/.test(submissionId))) {
+    throw new WorkflowInputError("Invalid plan revision submission ID.");
+  }
   return {
     action: input.action as WorkflowAction["action"],
     runId: input.runId,
@@ -88,5 +94,7 @@ export function parseWorkflowAction(value: unknown): WorkflowAction {
     ...(objective !== undefined ? { objective } : {}),
     ...(criteria !== undefined ? { criteria } : {}),
     ...(planMarkdown !== undefined ? { planMarkdown } : {}),
+    ...(feedback !== undefined ? { feedback } : {}),
+    ...(submissionId !== undefined ? { submissionId } : {}),
   };
 }

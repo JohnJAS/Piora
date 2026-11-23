@@ -268,12 +268,28 @@
 .browserAgentAddress { min-height: 45px; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-bottom: 1px solid #eceff3; color: #777d86; font-size: var(--text-xs); }
 .browserAgentAddress span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browserToolbar { min-height: 45px; display: flex; align-items: center; gap: 4px; padding: 6px 9px; border-bottom: 1px solid #eceff3; background: #fff; }
-.browserToolbar > button { width: 28px; height: 28px; display: grid; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--radius-control); background: transparent; color: #73777f; cursor: pointer; }
-.browserToolbar > button:hover:not(:disabled) { background: #f1f3f5; color: #25272b; }
-.browserToolbar > button:disabled { opacity: .4; }
+.browserNavigation { display: contents; }
+.browserNavigation > button, .browserToolbar > button { width: 28px; height: 28px; display: grid; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--radius-control); background: transparent; color: #73777f; cursor: pointer; }
+.browserNavigation > button:hover:not(:disabled), .browserToolbar > button:hover:not(:disabled) { background: #f1f3f5; color: #25272b; }
+.browserNavigation > button:disabled, .browserToolbar > button:disabled { opacity: .4; }
 .browserToolbar form { min-width: 0; height: 30px; flex: 1; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: #f5f6f8; color: #8a8e96; }
 .browserToolbar form:focus-within { border-color: #d8dbe0; background: #fff; box-shadow: 0 0 0 2px rgba(53, 103, 247, .08); }
 .browserToolbar input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: #202124; font: inherit; font-size: var(--text-xs); text-align: center; }
+[data-browser-chrome="menu"] .browserTabs { background: var(--bg); border-color: var(--border-soft); }
+[data-browser-chrome="menu"] .browserTabs > button { color: var(--text-muted); font-size: var(--text-sm); }
+[data-browser-chrome="menu"] .browserTabs > button[aria-selected="true"] { background: var(--bg-hover); color: var(--text); box-shadow: none; }
+[data-browser-chrome="menu"] .browserToolbar { display: flex; gap: 5px; padding: 6px 8px; border-color: var(--border-soft); background: var(--bg); }
+[data-browser-chrome="menu"] .browserNavigation { display: flex; align-items: center; height: 33px; padding: 1px 3px; flex: none; border: 1px solid var(--border-soft); border-radius: 18px; }
+[data-browser-chrome="menu"] .browserToolbar button { border-radius: 50%; color: var(--text); }
+[data-browser-chrome="menu"] .browserToolbar button:hover:enabled { background: var(--bg-hover); }
+[data-browser-chrome="menu"] .browserNavigation > button { width: 25px; height: 25px; }
+[data-browser-chrome="menu"] .browserNavigation > button:last-child { margin-left: 2px; }
+[data-browser-chrome="menu"] .browserToolbar form { position: relative; height: 33px; max-width: 620px; margin: 0 auto; border-radius: 18px; border: 1px solid var(--border-soft); background: var(--bg); }
+[data-browser-chrome="menu"] .browserToolbar form:focus-within { border-color: var(--border); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
+[data-browser-chrome="menu"] .browserToolbar input { font-size: var(--text-sm); color: var(--text); }
+[data-browser-chrome="menu"] .browserToolbar form[data-domain] input { color: transparent; }
+[data-browser-chrome="menu"] .browserBookmarkBar { background: var(--bg); border-color: var(--border-soft); }
+[data-browser-chrome="menu"] .browserBookmarkBar button { color: var(--text-muted); }
 .browserBookmarkBar { height: 33px; flex: 0 0 33px; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 3px 7px; border-bottom: 1px solid #eceff3; background: #fff; }
 .browserBookmarkBarItems { min-width: 0; display: flex; flex: 1; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .browserBookmarkBarItems::-webkit-scrollbar { display: none; }

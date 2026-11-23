@@ -9,7 +9,7 @@ const read = path => readFile(path, 'utf8').catch(error => { if (error.code === 
 export const planGoal = {
   id: 'plan-goal',
   mode: 'local-model-fixture',
-  scope: 'real Electron UI, Next routes, SDK and workflow tools with a deterministic loopback model; API reads only verify results',
+  scope: 'real Electron UI, Next routes, SDK and workflow tools with a deterministic loopback model; an isolated throwaway session warms the event route and API reads verify results',
   coverage: [
     'laboratory defaults off and is enabled through Settings UI',
     'zero persistent footer mode picker; Plan and Goal entry via + menu, /plan, /goal and removable mode pills',
@@ -29,15 +29,21 @@ export const planGoal = {
     let { page } = context;
     const { step, waitUntil, reload, restart, directory } = context;
     const screenshot = name => page.screenshot({ path: join(directory, name), animations: 'disabled', timeout: 5_000 });
-    const observations = [], mutations = [], laboratory = [];
-    let sessionId;
-    const observe = target => target.on('request', request => {
+    const observations = [], mutations = [], laboratory = [], revisionResponses = [];
+    let sessionId, automaticTitleFinished = false;
+    const observe = target => {
+      target.on('response', response => {
+        if (/\/api\/sessions\/[^/]+\/auto-name$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST') automaticTitleFinished = true;
+        if (/\/api\/agent\/[^/]+\/workflow$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST' && response.request().postDataJSON()?.action === 'revise') revisionResponses.push(response.status());
+      });
+      target.on('request', request => {
       const path = new URL(request.url()).pathname;
       if (!((request.method() === 'POST' && path.startsWith('/api/agent/')) || (request.method() === 'PUT' && path === '/api/settings/laboratory'))) return;
       const body = request.postDataJSON();
       mutations.push({ path, body, at: Date.now() });
       if (body?.type === 'submit_input' || body?.type === 'prompt') sessionId = path.split('/').at(-1);
-    });
+      });
+    };
     observe(page);
 
     const openAddMenu = async () => {
@@ -92,6 +98,7 @@ export const planGoal = {
         'composer laboratory visibility in + menu',
       );
       await page.keyboard.press('Escape');
+      await waitUntil(async () => await page.getByTestId('composer-add-trigger').getAttribute('aria-expanded') === 'false', 'add menu to close with Escape');
     };
     const snapshot = async () => {
       assert.ok(sessionId, 'UI send must establish a real session');
@@ -125,6 +132,36 @@ export const planGoal = {
     }, 'SDK run to settle');
 
     try {
+      await step('prepare-isolated-workflow-event-stream', async () => {
+        // The first dev-server route compilation can exceed the composer's
+        // connection deadline. Warm a separate synthetic session; the Plan
+        // and Goal submissions below still start and operate through the UI.
+        const handshake = await page.evaluate(async cwd => {
+          const created = await fetch('/api/agent/new', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'ensure_session', cwd, provider: 'desktop-workflow-fixture', modelId: 'plan-goal' }),
+            signal: AbortSignal.timeout(180_000),
+          });
+          if (!created.ok) throw new Error(`Warmup session failed: ${created.status}`);
+          const { sessionId } = await created.json();
+          const response = await fetch(`/api/agent/${sessionId}/events?transport=delta`, { signal: AbortSignal.timeout(180_000) });
+          if (!response.ok || !response.body) throw new Error(`Warmup event stream failed: ${response.status}`);
+          const reader = response.body.getReader(), decoder = new TextDecoder();
+          try {
+            let received = '';
+            while (!received.includes('\n\n')) {
+              const chunk = await reader.read();
+              if (chunk.done) throw new Error('Warmup event stream closed before its handshake');
+              received += decoder.decode(chunk.value, { stream: true });
+            }
+            const line = received.split('\n').find(value => value.startsWith('data: '));
+            return { sessionId, event: JSON.parse(line?.slice(6) ?? 'null') };
+          } finally { await reader.cancel(); }
+        }, directory);
+        assert.equal(handshake.event?.type, 'connected');
+        assert.equal(handshake.event?.sessionId, handshake.sessionId);
+        assert.equal(fixture.requests.length, 0, 'Warmup must not start a model request');
+      });
       await step('laboratory-default-off-and-enable', async () => {
         assert.equal((await readLaboratory()).planGoalEnabled, false, 'Fresh profiles must not opt into Plan / Goal');
         assert.equal(await page.getByTestId('workflow-mode-select').count(), 0);
@@ -143,6 +180,9 @@ export const planGoal = {
         assert.equal(await read(fixture.approvedPath), null);
         assert.equal(fixture.calls.filter(call => call.name === 'write').length, 1, 'Fixture must actually attempt the denied write');
         await idle();
+        // Automatic title generation has its own shadow model request. Finish
+        // it before advancing the fixture to the next workflow stage.
+        await waitUntil(() => automaticTitleFinished, 'automatic session title request to finish');
         await page.getByTestId('proposed-plan-card').waitFor({ state: 'visible' });
         await page.getByTestId('implement-plan-card').waitFor({ state: 'visible' });
         await waitUntil(() => page.getByTestId('workflow-plan-approve').isEnabled(), 'plan confirmation control to become ready');
@@ -153,6 +193,42 @@ export const planGoal = {
       });
 
       let firstPlan;
+      await step('plan-revision-recovery-before-admission', async () => {
+        const state = await snapshot();
+        const feedback = 'PLAN_GOAL_E2E_REVISE: Include the exact APPROVED_BY_UI output in the plan.';
+        const recoveryPrefix = `workflow:${sessionId}:${state.current.id}:${state.revision}:revise:`;
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        const matches = url => url.pathname === `/api/agent/${sessionId}/events` && url.searchParams.get('transport') === 'delta';
+        const matchesWorkflow = url => url.pathname === `/api/agent/${sessionId}/workflow`;
+        const holdStream = async route => { await gate; await route.abort().catch(() => {}); };
+        const blockRevision = route => route.request().method() === 'POST' ? route.abort() : route.continue();
+        await page.route(matches, holdStream);
+        await page.route(matchesWorkflow, blockRevision);
+        try {
+          await page.getByTestId('workflow-plan-revise-input').fill(feedback);
+          await page.getByTestId('workflow-plan-revise').click();
+          await waitUntil(async () => await page.evaluate(prefix => new Promise(resolve => {
+            const request = indexedDB.open('piora-prompt-recovery', 1);
+            request.onerror = () => resolve(null);
+            request.onsuccess = () => {
+              const db = request.result, read = db.transaction('prompts').objectStore('prompts').getAll();
+              read.onsuccess = () => { resolve(read.result.find(entry => entry.id.startsWith(prefix))?.draft?.value ?? null); db.close(); };
+              read.onerror = () => { resolve(null); db.close(); };
+            };
+          }), recoveryPrefix) === feedback, 'revision feedback to be saved before the event stream connects');
+          assert.equal(mutations.filter(row => row.body?.action === 'revise').length, 0, 'No revision reached the server while its event stream was held');
+          release();
+          await reload();
+        } finally {
+          release();
+          await page.unroute(matches, holdStream);
+          await page.unroute(matchesWorkflow, blockRevision);
+        }
+        assert.equal((await stateIs('awaiting_approval')).current.id, state.current.id);
+        await waitUntil(async () => (await page.locator('body').innerText()).includes(feedback), 'unconfirmed revision feedback in recovered history');
+      });
+
       await step('plan-refresh-and-revise', async () => {
         firstPlan = (await snapshot()).current;
         await reload();
@@ -162,11 +238,19 @@ export const planGoal = {
         fixture.stage = 'plan-revised';
         await page.getByTestId('workflow-plan-revise-input').fill('PLAN_GOAL_E2E_REVISE: Include the exact APPROVED_BY_UI output in the plan.');
         await page.getByTestId('workflow-plan-revise').click();
+        await waitUntil(async () => {
+          const current = (await snapshot()).current;
+          return current?.status === 'awaiting_approval' && current.version === firstPlan.version + 1;
+        }, 'revised plan to reach review');
         const revised = await stateIs('awaiting_approval');
         assert.equal(revised.current.title, 'Fixture plan v2');
         assert.equal(revised.current.id, firstPlan.id);
         assert.equal(revised.current.version, firstPlan.version + 1);
         assert.ok(revised.history.some(run => run.id === firstPlan.id && run.markdown === firstPlan.markdown), 'Original plan is retained unchanged');
+        assert.ok(mutations.some(row => row.body?.action === 'revise' && row.body.feedback === 'PLAN_GOAL_E2E_REVISE: Include the exact APPROVED_BY_UI output in the plan.'));
+        assert.deepEqual(revisionResponses, [200], 'Only the retried revision is accepted');
+        assert.equal(fixture.calls.filter(call => call.stage === 'plan-revised' && call.name === 'piora_submit_plan').length, 1, 'Only one revision runs');
+        assert.ok(fixture.requests.some(row => row.workflow && row.containsRevisionFeedback), 'The real model request includes the exact UI feedback');
         assert.equal(await read(fixture.approvedPath), null);
         await idle();
       });

@@ -43,6 +43,10 @@ export function isolatedEnvironment(source, paths) {
     PIORA_DEV_TSCONFIG: paths.tsconfig,
     PIORA_DESKTOP_DEV_PORT: String(paths.port),
     PIORA_DESKTOP_DEV_DEBUG_PORT: String(paths.debugPort),
+    // Keep the SDK from downloading missing fd/rg binaries during a test.
+    // Explicitly configured model calls (including real-provider scenarios)
+    // remain available; this does not block arbitrary application traffic.
+    PI_OFFLINE: '1',
     NEXT_TELEMETRY_DISABLED: '1',
     ...(paths.electronDist ? { ELECTRON_OVERRIDE_DIST_PATH: paths.electronDist } : {}),
   };
@@ -94,7 +98,7 @@ export function portOpen(port) {
 }
 
 export function startProcess(command, args, options) {
-  const child = spawn(command, args, { ...options, detached: process.platform !== 'win32', windowsHide: true });
+  const child = spawn(command, args, { windowsHide: true, ...options, detached: process.platform !== 'win32' });
   // Observe errors immediately, including ENOENT before a caller starts waiting.
   const exited = new Promise(resolve => {
     child.once('error', error => resolve({ error: error.message }));

@@ -88,7 +88,8 @@ export function validateSessionMessageInput(input: SessionMessageInput, maxMessa
       || input.operation
       || input.roomContext
       || input.teamExecution
-      || !["approve", "resume"].includes(input.workflowAction.action)
+      || !(input.workflowAction.action === "approve" || input.workflowAction.action === "resume"
+        || (input.workflowAction.action === "revise" && input.workflowAction.feedback !== undefined && input.content === input.workflowAction.feedback))
     ) {
       throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Invalid workflow execution request.");
     }

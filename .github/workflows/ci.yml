@@ -7,6 +7,10 @@ on:
         description: Build and fully verify before/after NSIS installers without publishing
         type: boolean
         default: false
+      browser_acceptance:
+        description: Exercise browser dialogs and records in the installed after-build during the installer benchmark
+        type: boolean
+        default: false
       benchmark_base:
         description: Baseline commit SHA for the packaging comparison
         type: string
@@ -225,6 +229,16 @@ jobs:
         env:
           EXPECTED_TAG: ${{ steps.metadata.outputs.tag }}
         run: node scripts/verify-windows-update-artifacts.mjs desktop/release $env:EXPECTED_TAG
+      - name: Save browser acceptance build before testing
+        if: matrix.variant == 'after' && inputs.browser_acceptance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-acceptance-input-${{ github.run_attempt }}
+          path: |
+            desktop/release/*-setup.exe
+            desktop/release/beta.yml
+          retention-days: 3
+          compression-level: 0
       - name: Install and fully verify benchmark artifacts
         shell: pwsh
         run: |
@@ -233,6 +247,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Benchmark installation/runtime verification failed' }
         env:
           EXPECTED_TAG: ${{ steps.metadata.outputs.tag }}
+          PIORA_CI_BROWSER_ACCEPTANCE: ${{ matrix.variant == 'after' && inputs.browser_acceptance && '1' || '0' }}
+      - name: Save isolated desktop acceptance reports
+        if: always() && matrix.variant == 'after' && inputs.browser_acceptance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-acceptance-reports-${{ github.run_attempt }}
+          path: |
+            .verification/desktop-e2e-*/report.md
+            .verification/desktop-e2e-*/profile-menu.png
+            .verification/desktop-e2e-*/dialog-geometry.json
+            .verification/desktop-e2e-*/failure.png
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
       - name: Upload verified benchmark installers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

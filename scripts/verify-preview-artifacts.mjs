@@ -61,7 +61,15 @@ async function main() {
         await timings.measure("payload-regressions", () => run(node, ["--test", "lib/portable-payload.test.mjs"], { env: { ...process.env, PIORA_TEST_7ZA: extractor } }));
         await timings.measure("unpacked-smoke", () => script("scripts/smoke-test-portable.mjs", unpacked, "--expected-version", tag, "--packaged-runtime", "--expected-brand", brand));
         await timings.measure("installed-smoke", () => script("scripts/smoke-test-portable.mjs", installed, "--expected-version", tag, "--packaged-runtime", "--expected-brand", brand));
-        await timings.measure("installed-subagents", () => script("scripts/run-desktop-e2e.mjs", "--scenario", "subagents", "--executable", installed, "--timeout-ms", "900000", "--step-timeout-ms", "90000"));
+        const browserAcceptance = process.env.PIORA_CI_BROWSER_ACCEPTANCE === "1" && process.env.RUNNER_ENVIRONMENT === "github-hosted";
+        const scenarios = browserAcceptance ? ["browser-menu-appearance","browser-menu","browser-menu-native","subagents"] : ["subagents"];
+        const errors = [];
+        for (const scenario of scenarios) {
+          try {
+            await timings.measure("installed-"+scenario, () => script("scripts/run-desktop-e2e.mjs", "--scenario", scenario, "--executable", installed, "--timeout-ms", "900000", "--step-timeout-ms", scenario === "subagents" ? "90000" : "150000"));
+          } catch (error) { errors.push(error); }
+        }
+        if (errors.length) throw new AggregateError(errors, "Installed desktop scenarios failed");
         await timings.measure("electron-payload-integrity", () => script("scripts/verify-portable-runtime.mjs", join(releaseRoot, "win-unpacked"), tag));
       },
     ]);

@@ -33,7 +33,7 @@ export function handleWorkflowConfigureCommand(host: RpcCommandHost, command: Se
 export async function handleWorkflowActionCommand(host: RpcCommandHost, command: SessionRpcCommand) {
   host.assertWorkflowSession();
   const action = parseWorkflowAction(command.workflowAction);
-  if (["approve", "resume"].includes(action.action)) {
+  if (["approve", "resume"].includes(action.action) || (action.action === "revise" && action.feedback !== undefined)) {
     throw new WorkflowError("Execution decisions must use the workflow command queue", "INVALID_WORKFLOW", 400);
   }
   if (!["pause", "cancel", "set_budget", "edit_goal", "replace_goal"].includes(action.action)) host.assertSessionIdle("change workflow state");

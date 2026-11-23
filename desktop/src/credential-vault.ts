@@ -49,6 +49,61 @@ export class CredentialVault {
   }
   lock() { this.data = undefined; this.expires = 0; }
   save(value: Partial<VaultEntry>) { const data = this.requireData(); const previous = data.entries.find(item => item.id === value.id); if (value.id && !previous) throw error(); if (!previous && data.entries.length >= 500) throw error(); const next = entry(value, previous); if (!this.allowedUrl(next.url)) throw error(); this.persist({ ...data, entries: [...data.entries.filter(item => item.id !== next.id), next] }); }
+  importPasswordRows(rows: Array<Pick<VaultEntry, "url" | "name" | "username" | "password">>, replace: boolean, preview: boolean) {
+    const data = this.requireData();
+    const remembered = this.readRemembered();
+    const manual = [...data.entries], automatic = [...remembered.entries];
+    type Location = { list: VaultEntry[]; index: number };
+    const accounts = new Map<string, Location[]>();
+    const identity = (record: VaultEntry) => JSON.stringify([new URL(record.url).origin, record.username]);
+    const indexEntry = (list: VaultEntry[], index: number) => {
+      const key = identity(list[index]!);
+      const existing = accounts.get(key) ?? [];
+      existing.push({ list, index });
+      accounts.set(key, existing);
+    };
+    for (const list of [manual, automatic]) list.forEach((_, index) => indexEntry(list, index));
+    let manualWrites = 0, automaticWrites = 0, duplicates = 0, invalid = 0;
+    const sites = new Set<string>();
+    for (const row of rows) {
+      try {
+        const candidate = entry({ ...row, autoLogin: false });
+        credentialUrl(candidate.url, remembered.httpOrigins ?? []);
+        const matches = accounts.get(identity(candidate)) ?? [];
+        if (matches.length) {
+          duplicates++;
+          sites.add(new URL(candidate.url).origin);
+          if (!replace) continue;
+          const exact = matches.filter(({ list, index }) => list[index]!.url === candidate.url);
+          const eligible = exact.length ? exact : matches;
+          if (eligible.length !== 1) continue;
+          const { list, index } = eligible[0]!;
+          // Preserve the saved sign-in path, owner, ID and original autofill permission.
+          list[index] = { ...list[index]!, name: candidate.name, password: candidate.password };
+          if (list === manual) manualWrites++;
+          else automaticWrites++;
+          continue;
+        }
+        if (manual.length >= 500) { invalid++; continue; }
+        manual.push(candidate);
+        indexEntry(manual, manual.length - 1);
+        sites.add(new URL(candidate.url).origin);
+        manualWrites++;
+      } catch { invalid++; }
+    }
+    let added = manualWrites + automaticWrites;
+    if (!preview) {
+      if (manualWrites) {
+        try { this.persist({ ...data, entries: manual }); }
+        catch { added -= manualWrites; invalid += manualWrites; }
+      }
+      if (automaticWrites) {
+        try { this.writeRemembered({ ...remembered, entries: automatic }); }
+        catch { added -= automaticWrites; invalid += automaticWrites; }
+      }
+    }
+    return { added, duplicates, invalid, sites: [...sites] };
+  }
   remove(id: string) { const data = this.requireData(); this.persist({ ...data, entries: data.entries.filter(item => item.id !== id) }); }
   configure(enabled: boolean) { this.persist({ ...this.requireData(), autofill: enabled }); }
   allowedOrigins(): string[] { return this.readRemembered().httpOrigins ?? []; }

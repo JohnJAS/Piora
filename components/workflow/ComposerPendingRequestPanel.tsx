@@ -19,7 +19,9 @@ export interface ComposerPendingRequestPanelProps {
   permissionSaving?: boolean;
   onToolPermissionChange?: (mode: PermissionMode) => void;
   onApprovePlan: () => void;
-  onRevisePlanWithFeedback: (feedback: string) => void;
+  planFeedback: string;
+  onPlanFeedbackChange: (feedback: string) => void;
+  onRevisePlanWithFeedback: (feedback: string) => Promise<boolean>;
   onDismissPlan: () => void;
 }
 
@@ -40,6 +42,8 @@ export function ComposerPendingRequestPanel({
   permissionSaving,
   onToolPermissionChange,
   onApprovePlan,
+  planFeedback,
+  onPlanFeedbackChange,
   onRevisePlanWithFeedback,
   onDismissPlan,
 }: ComposerPendingRequestPanelProps) {
@@ -67,6 +71,8 @@ export function ComposerPendingRequestPanel({
         permissionSaving={permissionSaving}
         onToolPermissionChange={onToolPermissionChange}
         onApprove={onApprovePlan}
+        feedback={planFeedback}
+        onFeedbackChange={onPlanFeedbackChange}
         onReviseWithFeedback={onRevisePlanWithFeedback}
         onDismiss={onDismissPlan}
       />

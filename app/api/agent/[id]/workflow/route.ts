@@ -48,18 +48,21 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json(result, { headers: noStore });
     }
     const action = parseWorkflowAction(body);
-    if (action.action === "approve" || action.action === "resume") {
+    if (action.action === "approve" || action.action === "resume" || (action.action === "revise" && action.feedback !== undefined)) {
       // A durable receipt makes retries, concurrent clicks, and a stop during
       // asynchronous runtime admission target exactly the same submission.
-      const idempotencyKey = `workflow:${id}:${action.runId}:${action.expectedRevision}:${action.action}`;
+      const idempotencyKey = `workflow:${id}:${action.runId}:${action.expectedRevision}:${action.action}${action.submissionId ? `:${action.submissionId}` : ""}`;
       const router = getSessionMessageRouter();
       const previous = await router.findSubmissionReceipt(id, idempotencyKey);
       if (!previous && !readLaboratorySettings().planGoalEnabled) throw new WorkflowError("Enable Plan and Goal in Settings > Laboratory before continuing.", "WORKFLOW_LABORATORY_DISABLED", 409);
       const receipt = previous ?? await router.dispatchSessionMessage({
         targetSessionId: id, source: "ui", delivery: "next_turn", inputMode: "text", idempotencyKey,
-        content: action.action === "approve" ? "Execute the approved plan." : "Resume the current workflow.",
+        content: action.action === "approve" ? "Execute the approved plan." : action.action === "revise" ? action.feedback! : "Resume the current workflow.",
         workflowAction: action,
       });
+      if (action.action === "revise" && (await router.getCommand(receipt.commandId)).content !== action.feedback) {
+        throw new WorkflowError("A different revision was already submitted for this plan. Refresh the workflow before trying again.");
+      }
       if (["cancelled", "failed", "expired", "interrupted"].includes(receipt.status)) {
         const command = await router.getCommand(receipt.commandId);
         return NextResponse.json({ snapshot: readWorkflowSnapshot(id), promptStarted: false, commandId: receipt.commandId, idempotencyKey,

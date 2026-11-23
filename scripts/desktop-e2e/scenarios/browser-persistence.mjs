@@ -32,7 +32,7 @@ export const browserPersistence = {
     for (const name of ['Persistence chat A', 'Persistence chat B']) {
       const id = randomUUID(), timestamp = new Date().toISOString();
       sessionIds[name] = id;
-      await writeFile(join(sessions, `${id}.jsonl`), [
+      await writeFile(join(sessions, `${timestamp.replaceAll(":", "-")}_${id}.jsonl`), [
         {type:'session',version:3,id,timestamp,cwd},
         {type:'message',id:'user1',parentId:null,message:{role:'user',content:'Controlled browser persistence fixture',timestamp:Date.now()}},
         {type:'session_info',id:'info1',parentId:'user1',name,timestamp},
@@ -47,10 +47,15 @@ export const browserPersistence = {
     const observations = [];
     async function open(name) {
       await page.getByText(name, { exact: true }).first().click();
+      await page.getByText('Controlled browser persistence fixture', { exact: true }).waitFor();
+      // Selecting a chat focuses its composer. Application shortcuts are
+      // intentionally preserved for text editors, so move focus to a normal
+      // toolbar button before exercising the browser shortcut.
+      await page.locator('.desktop-titlebar-sidebar-toggle').focus();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
-      const address = page.getByRole('textbox', { name: /^(Address|地址)$/ });
+      const address = page.getByRole('combobox', { name: /^(Address|地址)$/ });
       const target = `${fixture.origin}/${name.endsWith("A") ? "chat-a" : "chat-b"}`;
-      await waitUntil(async () => (await page.evaluate(() => window.piDesktop.browser.getState())).sessionId === fixture.sessionIds[name], "selected chat browser binding");
+      await waitUntil(async () => (await page.evaluate(() => window.piDesktop.browser.getState())).sessionId === fixture.sessionIds[name], 'selected chat browser binding');
       await address.fill(target); await address.press('Enter');
       return waitUntil(() => getBrowser().contexts().flatMap(context => context.pages()).find(candidate => candidate.url() === target), 'controlled site native browser target');
     }

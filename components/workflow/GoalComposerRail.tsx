@@ -113,6 +113,7 @@ export function GoalComposerRail({
             type="button"
             className={styles.goalRailMain}
             data-testid="goal-rail-open-panel"
+            disabled={busy}
             onClick={openDetails}
             title={run.objective}
           >

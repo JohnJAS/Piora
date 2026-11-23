@@ -2185,7 +2185,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleWorkflowAction = useCallback(async (action: WorkflowAction): Promise<WorkflowSnapshot> => {
     const sid = sessionIdRef.current;
     if (!sid) throw new Error(t("workflow.actionError"));
-    const startsRun = action.action === "approve" || action.action === "resume";
+    const submittedAction = action.action === "revise" && action.feedback !== undefined
+      ? { ...action, submissionId: crypto.randomUUID() }
+      : action;
+    const startsRun = action.action === "approve" || action.action === "resume" || (action.action === "revise" && action.feedback !== undefined);
     if (startsRun && (agentRunningRef.current || bashRunningRef.current)) throw new Error(t("workflow.stale"));
     let runId = promptRunIdRef.current;
     let submission: typeof promptSubmissionRef.current = null;
@@ -2198,7 +2201,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       cancelledPromptRunIdRef.current = null;
       promptSettlementByRunRef.current.clear();
       promptSettlementPollByRunRef.current.clear();
-      submission = { runId, sid, idempotencyKey: `workflow:${sid}:${action.runId}:${action.expectedRevision}:${action.action}`, pending: true, commandId: null };
+      submission = { runId, sid, idempotencyKey: `workflow:${sid}:${action.runId}:${action.expectedRevision}:${action.action}${submittedAction.submissionId ? `:${submittedAction.submissionId}` : ""}`, pending: true, commandId: null };
       promptSubmissionRef.current = submission;
       preparingPromptRunIdRef.current = runId;
       optimisticUserMessageKeyRef.current = null;
@@ -2212,12 +2215,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       dispatch({ type: "start" });
     }
     try {
+      if (action.action === "revise" && action.feedback !== undefined && submission) {
+        const draft = { value: action.feedback, files: [], images: [] };
+        const message: import("@/lib/types").UserMessage = {
+          role: "user", clientPromptId: submission.idempotencyKey, content: action.feedback,
+          recoveryDraft: draft, timestamp: Date.now(),
+        };
+        // As with ordinary sends, retain the user's text before network work;
+        // only a disk-backed session receipt can retire this recovery copy.
+        await savePendingPrompt({ id: submission.idempotencyKey, scope: sid, branchAnchorId: entryIds.findLast(Boolean), message, draft });
+      }
       if (startsRun) await ensureEventsConnected(sid);
       if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId || (startsRun && cancelledPromptRunIdRef.current === runId)) throw new Error(t("chat.sendCancelled"));
       if (startsRun) preparingPromptRunIdRef.current = null;
       requestStarted = true;
       const response = await fetch(`/api/agent/${encodeURIComponent(sid)}/workflow`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(submittedAction),
       });
       definitivelyNotStarted = response.status >= 400 && response.status < 500;
       const result = await response.json() as { snapshot?: WorkflowSnapshot; promptStarted?: boolean; commandId?: string; idempotencyKey?: string; error?: string };
@@ -2238,7 +2251,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         } else void waitForPromptSettlement(sid, runId);
       }
     }
-  }, [closeEvents, ensureEventsConnected, finishPromptWithoutStream, t, waitForPromptSettlement]);
+  }, [closeEvents, ensureEventsConnected, entryIds, finishPromptWithoutStream, t, waitForPromptSettlement]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean, workflow?: WorkflowPromptOptions) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
