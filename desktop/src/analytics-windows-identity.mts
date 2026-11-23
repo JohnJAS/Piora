@@ -27,16 +27,21 @@ export function unknownIdentity(
 }
 
 // Use the current process token's SID, not the interactive desktop user or a
-// guessed profile directory. CIM must positively identify that exact account.
+// guessed profile directory. Resolve the token account through WinNT so the
+// parser can compare its objectSid with the token SID without a CIM query.
 const script = String.raw`
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $sid = $identity.User.Value
 if ($sid -notmatch '^S-1-5-21-(\d+-){3}\d+$') { throw 'Unsupported account SID' }
-$account = @(Get-CimInstance -ClassName Win32_UserAccount -Filter "SID='$sid'")
-if ($account.Count -ne 1) { throw 'Account not resolved' }
-[ordered]@{ name=$identity.Name; sid=$sid; account_sid=$account[0].SID; domain=$account[0].Domain; login=$account[0].Name; display_name=$account[0].FullName; local=$account[0].LocalAccount } | ConvertTo-Json -Compress
+$parts = $identity.Name.Split('\', 2)
+if ($parts.Length -ne 2 -or -not $parts[0] -or -not $parts[1]) { throw 'Account not resolvable' }
+$domain = $parts[0]
+$login = $parts[1]
+$account = [adsi]"WinNT://$domain/$login,user"
+$accountSid = [System.Security.Principal.SecurityIdentifier]::new($account.Properties['objectSid'].Value, 0).Value
+[ordered]@{ name=$identity.Name; sid=$sid; account_sid=$accountSid; domain=$domain; login=$login; display_name=[string]$account.FullName; local=($domain -ieq [Environment]::MachineName) } | ConvertTo-Json -Compress
 `;
 
 export function parseWindowsIdentity(text: string): IdentityObservation {
@@ -109,7 +114,7 @@ function runProbe(): Promise<string> {
         "-EncodedCommand",
         Buffer.from(script, "utf16le").toString("base64"),
       ],
-      { windowsHide: true, timeout: 5000, maxBuffer: 16384, encoding: "utf8" },
+      { windowsHide: true, timeout: 12000, maxBuffer: 16384, encoding: "utf8" },
       (error, stdout) =>
         error ? reject(new Error("IDENTITY_READ_FAILED")) : resolve(stdout),
     );

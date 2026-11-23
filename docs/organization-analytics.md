@@ -86,7 +86,7 @@ node_modules/.bin/tsc --noEmit -p desktop/tsconfig.json
 
 ## Windows 域身份（#462）
 
-仅在企业配置 `enabled: true` 且后端支持时读取当前 Piora 进程用户的 Windows 登录身份。通过 WindowsIdentity 的当前令牌 SID 查询 Win32_UserAccount，并核对 SID、域、登录名及 LocalAccount；不扫描用户目录，不依据显示名、USERNAME/USERDOMAIN 环境变量猜测工号。查询限时 5 秒，本地账号和无法确认的身份均不上报域名或登录名。不会读取密码或上传 SID/令牌。
+仅在企业配置 `enabled: true` 且后端支持时读取当前 Piora 进程用户的 Windows 登录身份。通过 WinNT（ADSI）按当前进程令牌的域和登录名解析账号，核对账号 objectSid 与令牌 SID；以域名与系统机器名是否相同判定本地账号；不扫描用户目录，不依据显示名、USERNAME/USERDOMAIN 环境变量猜测工号。为避免域机上 Win32_UserAccount 查询超时，改用上述定向查询。探针子进程限时 12 秒，本地账号和无法确认的身份均不上报域名或登录名。不会读取密码或上传 SID/令牌。
 
 客户端对接 piora-analytics #5 的 `scripts/generate-contract.mjs` / `contracts/openapi.yaml`：
 
