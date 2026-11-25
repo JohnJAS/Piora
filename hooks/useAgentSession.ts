@@ -7,6 +7,7 @@ import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 import type { ToolReviewRecord } from "@/lib/tool-review-types";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
+import { createSharedCommandStreamChannel } from "@/lib/shared-command-stream";
 import { savePendingPrompt, dismissPendingPrompt, readPendingPrompts, mergePendingPrompts, replaceFailedPromptMessage, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
@@ -630,6 +631,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const bashRunningRef = useRef(false);
   const bashRecoveryIdRef = useRef(0);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
+  const applyConnectedStateRef = useRef<((sid: string, state?: AgentStateResponse) => void) | null>(null);
+  const sharedCommandStream = useMemo(() => createSharedCommandStreamChannel(), []);
   const initialScrollDoneRef = useRef(false);
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToUserRef = useRef(false);
@@ -1003,8 +1006,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sid: string,
   ): Promise<EventStreamConnectionResult> {
     closeEvents(true);
-    const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`);
+    const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta&include=commands`);
+    const nativeClose = es.close.bind(es);
+    es.close = () => {
+      nativeClose();
+      sharedCommandStream.deactivate(sid, es);
+    };
     eventSourceRef.current = es;
+    sharedCommandStream.activate(sid, es);
     const decodeEvent = createAgentEventDecoder();
 
     return new Promise((resolve) => {
@@ -1020,19 +1029,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       es.onmessage = (e) => {
         if (eventSourceRef.current !== es) return;
         try {
-          const event = decodeEvent(JSON.parse(e.data) as AgentEvent);
+          const raw = JSON.parse(e.data) as AgentEvent & { payload?: unknown };
+          if (raw?.type === "command_stream") {
+            sharedCommandStream.emit(sid, raw.payload, es);
+            return;
+          }
+          const event = decodeEvent(raw);
           if (!event) return;
-          if (event.type === "connected") settle("connected");
+          if (event.type === "connected") {
+            applyConnectedStateRef.current?.(sid, event.state as AgentStateResponse | undefined);
+            settle("connected");
+          }
           handleAgentEventRef.current?.(event);
         } catch {
           // ignore
         }
       };
       es.onerror = () => {
+        sharedCommandStream.emitError(sid, es);
         if (es.readyState === EventSource.CLOSED) {
           // Fatal error (404/500/content-type mismatch): browser won't
           // auto-reconnect. Settle the Promise and manually reconnect for
           // already-running sessions.
+          sharedCommandStream.deactivate(sid, es);
           settle("closed");
           if (eventSourceRef.current === es && agentRunningRef.current) {
             eventSourceRef.current = null;
@@ -1046,11 +1065,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // connection must be ready before they continue.
       };
     });
-  }, [closeEvents]);
+  }, [closeEvents, sharedCommandStream]);
 
   const ensureEventsConnected = useCallback(async (sid: string) => {
     const current = eventSourceRef.current;
-    if (current?.readyState === EventSource.OPEN && current.url.endsWith(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`)) return;
+    const baseUrl = `/api/agent/${encodeURIComponent(sid)}/events?transport=delta`;
+    if (current?.readyState === EventSource.OPEN && (current.url.endsWith(baseUrl) || current.url.endsWith(`${baseUrl}&include=commands`))) return;
     const result = await connectEvents(sid);
     if (result.status === "connected" || result.source.readyState === EventSource.OPEN) return;
     if (eventSourceRef.current === result.source) eventSourceRef.current = null;
@@ -1807,6 +1827,40 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;
+  applyConnectedStateRef.current = (sid, state) => {
+    if (!state || sessionIdRef.current !== sid) return;
+    if (cancelledPromptRunIdRef.current === promptRunIdRef.current) return;
+    if (state.runtime && state.runtime !== "idle") restoreStatusClock(state);
+    const compacting = Boolean(state.isCompacting);
+    setIsCompacting(compacting);
+    setCompactionStartedAt(compacting ? state.compactionStartedAt ?? null : null);
+    if (state.queuedMessages) setQueuedMessages(normalizeQueuedMessages(state.queuedMessages));
+    if (state.runtime === "stopping") setAgentPhase({ kind: "stopping" });
+    else if (state.activeTools) {
+      const tools = state.activeTools;
+      if (state.statusPhaseKind === "agent") setAgentPhase(null);
+      else if (state.statusPhaseKind === "waiting_model") setAgentPhase({ kind: "waiting_model" });
+      else if (state.statusPhaseKind === "running_command") setAgentPhase({ kind: "running_command" });
+      else setAgentPhase((phase) => tools.length
+        ? { kind: "running_tools", tools }
+        : phase?.kind === "running_tools" || phase?.kind === "stopping" ? { kind: "waiting_model" } : phase);
+    }
+    const busy = Boolean(
+      state.isStreaming
+      || state.isPromptRunning
+      || state.isCompacting
+      || state.isBashRunning
+      || (state.runtime && state.runtime !== "idle"),
+    );
+    if (
+      agentRunningRef.current
+      && !busy
+      && preparingPromptRunIdRef.current !== promptRunIdRef.current
+      && !promptSubmissionRef.current?.pending
+    ) {
+      void reconcileAgentState(sid);
+    }
+  };
 
   // A background child outlives the foreground prompt. Keep its parent's
   // stream subscribed without keeping the composer busy, and hydrate the
@@ -1942,6 +1996,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return commandCatalogRef.current;
     },
     connectModelEvents: ensureEventsConnected,
+    sharedCommandStream,
     resumeQueuedInput,
     uploadFiles: uploadPromptMaterialFiles,
     onAccepted: () => { if (isNew) promoteNewSession(); },

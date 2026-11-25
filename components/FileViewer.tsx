@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useEffect,
   useState,
   useRef,
@@ -56,7 +57,7 @@ import {
 
 export type { DisplayMode } from "./file-viewer/shared";
 
-export function FileViewer(props: FileViewerProps) {
+export const FileViewer = memo(function FileViewer(props: FileViewerProps) {
   const { filePath: originalPath, onOpenFile, revealLine, revealColumn } = props;
   const [recovered, setRecovered] = useState<{ original: string; path: string } | null>(null);
   const filePath = recovered?.original === props.filePath ? recovered.path : props.filePath;
@@ -65,7 +66,7 @@ export function FileViewer(props: FileViewerProps) {
     else setRecovered({ original: originalPath, path });
   }, [originalPath, onOpenFile, revealLine, revealColumn]);
   return <FileViewerContent {...props} filePath={filePath} onLocateFile={locate} />;
-}
+});
 
 function FileViewerContent({
   filePath,

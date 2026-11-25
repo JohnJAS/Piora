@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import {
   DefaultPackageManager,
@@ -10,6 +10,7 @@ import {
   type SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { createAsyncSnapshotCache } from "./async-snapshot-cache";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import {
   FIRST_PARTY_EXTENSIONS,
@@ -19,6 +20,35 @@ import {
 } from "./first-party-extensions";
 
 const EXTENSION_SETTINGS_VERSION = 1;
+const PACKAGE_RESOLVE_CACHE_TTL_MS = 15_000;
+
+type ResolvedPackageResources = Awaited<ReturnType<DefaultPackageManager["resolve"]>>;
+
+declare global {
+  var __pioraExtensionPackageResolveCache:
+    | ReturnType<typeof createAsyncSnapshotCache<ResolvedPackageResources>>
+    | undefined;
+}
+
+function packageResolveCache() {
+  return globalThis.__pioraExtensionPackageResolveCache ??= createAsyncSnapshotCache<ResolvedPackageResources>(
+    PACKAGE_RESOLVE_CACHE_TTL_MS,
+    32,
+  );
+}
+
+export function invalidateExtensionLoadPlanCache(): void {
+  globalThis.__pioraExtensionPackageResolveCache?.invalidate();
+}
+
+function pathStamp(targetPath: string): string {
+  try {
+    const stat = statSync(targetPath, { bigint: true });
+    return `${stat.mtimeNs}:${stat.size}`;
+  } catch {
+    return "missing";
+  }
+}
 
 function defaultDisabledExtensionIds(): string[] {
   return FIRST_PARTY_EXTENSIONS
@@ -97,6 +127,7 @@ export function setExtensionEnabled(
   };
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writePrivateFileAtomicSync(path, `${JSON.stringify(next, null, 2)}\n`);
+  invalidateExtensionLoadPlanCache();
   return next;
 }
 
@@ -220,8 +251,6 @@ export async function resolveExtensionLoadPlan(options: {
   preferences?: ExtensionPreferences;
 }): Promise<ExtensionLoadPlan> {
   const preferences = options.preferences ?? readExtensionPreferences();
-  const packageManager = new DefaultPackageManager(options);
-  const resolved = await packageManager.resolve(options.installMissing ? undefined : async () => "skip");
   const candidates: ResolvedExtensionCandidate[] = [];
 
   for (const descriptor of FIRST_PARTY_EXTENSIONS.filter(({ profiles }) => profiles.includes(options.profile))) {
@@ -240,7 +269,29 @@ export async function resolveExtensionLoadPlan(options: {
     });
   }
 
-  for (const resource of options.profile === "normal" ? resolved.extensions : []) {
+  let resolvedExtensions: ResolvedPackageResources["extensions"] = [];
+  if (options.profile === "normal") {
+    const cacheKey = JSON.stringify({
+      cwd: normalizedPath(options.cwd),
+      agentDir: normalizedPath(options.agentDir),
+      installMissing: Boolean(options.installMissing),
+      packages: options.settingsManager.getPackages?.() ?? [],
+      extensionPaths: options.settingsManager.getExtensionPaths?.() ?? [],
+      stamps: [
+        pathStamp(resolve(options.agentDir, "settings.json")),
+        pathStamp(resolve(options.agentDir, "extensions")),
+        pathStamp(resolve(options.cwd, ".pi", "settings.json")),
+        pathStamp(resolve(options.cwd, ".pi", "extensions")),
+      ],
+    });
+    const resolved = await packageResolveCache().get(cacheKey, () => {
+      const packageManager = new DefaultPackageManager(options);
+      return packageManager.resolve(options.installMissing ? undefined : async () => "skip");
+    });
+    resolvedExtensions = resolved.extensions;
+  }
+
+  for (const resource of resolvedExtensions) {
     const id = extensionIdFromSource(resource.path, resource.metadata);
     candidates.push({
       id,

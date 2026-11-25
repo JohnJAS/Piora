@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { encodeFilePathForApi, getRelativeFilePath, normalizeFilePathSlashes } from "@/lib/file-paths";
 import { getFileViewerKind, isMarkdownPath } from "@/lib/file-types";
 import type { GitFileStatus } from "@/lib/git-types";
@@ -23,7 +23,7 @@ import {
   type Translate,
 } from "./shared";
 
-export function TreeNode({
+export const TreeNode = memo(function TreeNode({
   node,
   depth,
   cwd,
@@ -412,4 +412,4 @@ export function TreeNode({
       ) : null}
     </div>
   );
-}
+});

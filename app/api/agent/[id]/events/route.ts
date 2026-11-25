@@ -1,7 +1,7 @@
 import { createAgentEventTransport } from "@/lib/agent-event-transport";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
-import { createChatCommandEventResponse } from "@/lib/chat-command-events";
+import { attachChatCommandStream, createChatCommandEventResponse } from "@/lib/chat-command-events";
 import { enqueueStreamFrame, eventStreamQueue } from "@/lib/bounded-event-stream";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  if (new URL(req.url).searchParams.get("scope") === "commands") return createChatCommandEventResponse(req, id);
+  const searchParams = new URL(req.url).searchParams;
+  if (searchParams.get("scope") === "commands") return createChatCommandEventResponse(req, id);
+  const includeCommands = searchParams.get("include") === "commands";
   const runtimeProfile = getAgentRuntimeProfile();
 
   const sessionReady = resolveOrStartRpcSession(id, { runtimeProfile })
@@ -26,16 +28,19 @@ export async function GET(
   const stream = new ReadableStream({
     async start(controller) {
       let closed = false;
+      let eventSeq = 0;
       let unsubscribe = () => {};
+      let detachCommands = () => {};
       const timers: { heartbeat?: ReturnType<typeof setInterval>; metrics?: ReturnType<typeof setInterval> } = {};
       const encoder = new TextEncoder();
-      const transport = createAgentEventTransport((data) => {
+      const sendFrame = (data: unknown) => {
         if (closed) return;
         try {
-          if (!enqueueStreamFrame(controller, encoder.encode(`data: ${JSON.stringify(data)}\n\n`))) cleanup();
+          if (!enqueueStreamFrame(controller, encoder.encode(`id: ${++eventSeq}\ndata: ${JSON.stringify(data)}\n\n`))) cleanup();
         }
         catch { cleanup(); }
-      }, { incremental: new URL(req.url).searchParams.get("transport") === "delta" });
+      };
+      const transport = createAgentEventTransport(sendFrame, { incremental: searchParams.get("transport") === "delta" });
       cleanup = () => {
         if (closed) return;
         closed = true;
@@ -43,12 +48,14 @@ export async function GET(
         if (timers.heartbeat) clearInterval(timers.heartbeat);
         if (timers.metrics) clearInterval(timers.metrics);
         unsubscribe();
+        detachCommands();
         req.signal.removeEventListener("abort", cleanup);
         try { controller.close(); } catch { /* Already cancelled. */ }
       };
       // Bind cancellation before awaiting startup, including already-aborted requests.
       req.signal.addEventListener("abort", cleanup, { once: true });
       if (req.signal.aborted) { cleanup(); return; }
+      if (!enqueueStreamFrame(controller, encoder.encode("retry: 500\n\n"))) { cleanup(); return; }
       const resolved = await sessionReady;
       if (closed) return;
       if (!resolved) {
@@ -56,13 +63,21 @@ export async function GET(
         cleanup();
         return;
       }
-      transport.push({ type: "connected", sessionId: id, runtimeProfile });
+      const connectState = typeof resolved.getStreamConnectState === "function"
+        ? resolved.getStreamConnectState()
+        : resolved.getRuntimeState("progress");
+      transport.push({ type: "connected", sessionId: id, runtimeProfile, state: connectState });
       unsubscribe = resolved.onEvent((event) => transport.push(event));
       if (closed) { unsubscribe(); return; }
       // Seed content and its server-owned rate immediately on session switch
       // or reconnect, including when the model is currently silent.
       const message = resolved.getStreamingMessage();
       if (message) transport.push({ type: "message_update", message });
+      if (includeCommands && !closed) {
+        detachCommands = attachChatCommandStream(id, (payload) => {
+          sendFrame({ type: "command_stream", payload });
+        }, { onFatalError: cleanup });
+      }
       if (closed) return;
       timers.metrics = setInterval(() => {
         const streamingMetrics = resolved.getStreamingMetrics();

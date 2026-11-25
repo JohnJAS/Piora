@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   encodePcm16Wav,
   MAX_VOICE_RECORDING_MS,
@@ -29,6 +29,121 @@ interface AudioCapture {
 
 type AudioContextConstructor = new () => AudioContext;
 
+const AVAILABILITY_FRESHNESS_MS = 30_000;
+
+interface SpeechAvailabilityState {
+  available: boolean;
+  pendingInstall: boolean;
+  ready: boolean;
+}
+
+const initialAvailability: SpeechAvailabilityState = {
+  available: false,
+  pendingInstall: false,
+  ready: false,
+};
+
+let availabilityState: SpeechAvailabilityState = initialAvailability;
+let availabilityLastFetchedAt = 0;
+let availabilityRequest: AbortController | null = null;
+let availabilityTimer: ReturnType<typeof setInterval> | null = null;
+let availabilityCleanup: (() => void) | undefined;
+const availabilityListeners = new Set<() => void>();
+
+function publishAvailability(next: SpeechAvailabilityState): void {
+  if (
+    availabilityState.available === next.available
+    && availabilityState.pendingInstall === next.pendingInstall
+    && availabilityState.ready === next.ready
+  ) {
+    return;
+  }
+  availabilityState = next;
+  availabilityListeners.forEach((listener) => listener());
+}
+
+function syncPendingInstallTimer(): void {
+  if (availabilityListeners.size > 0 && availabilityState.pendingInstall) {
+    if (!availabilityTimer) {
+      availabilityTimer = setInterval(() => {
+        if (availabilityState.pendingInstall && !document.hidden) {
+          void refreshSpeechAvailability(true);
+        }
+      }, 3_000);
+    }
+    return;
+  }
+  if (availabilityTimer) {
+    clearInterval(availabilityTimer);
+    availabilityTimer = null;
+  }
+}
+
+async function refreshSpeechAvailability(force = false): Promise<void> {
+  if (!force && availabilityState.ready && Date.now() - availabilityLastFetchedAt < AVAILABILITY_FRESHNESS_MS) return;
+  if (availabilityRequest) return;
+  const controller = new AbortController();
+  availabilityRequest = controller;
+  try {
+    const response = await fetch("/api/speech/transcribe", { cache: "no-store", signal: controller.signal });
+    if (!response.ok) return;
+    const payload = await response.json() as { available?: unknown; enabled?: unknown; installed?: unknown; installPhase?: unknown };
+    if (controller.signal.aborted) return;
+    availabilityLastFetchedAt = Date.now();
+    publishAvailability({
+      available: payload.available === true,
+      pendingInstall: payload.enabled === true && payload.installed !== true && payload.installPhase !== "error",
+      ready: true,
+    });
+    syncPendingInstallTimer();
+  } catch {
+    // Retry on visibility/online or next passive refresh.
+  } finally {
+    if (availabilityRequest === controller) availabilityRequest = null;
+  }
+}
+
+function subscribeSpeechAvailability(listener: () => void): () => void {
+  availabilityListeners.add(listener);
+  if (availabilityListeners.size === 1) {
+    const onSettingsChanged = () => {
+      availabilityLastFetchedAt = 0;
+      availabilityRequest?.abort();
+      availabilityRequest = null;
+      void refreshSpeechAvailability(true);
+    };
+    const onVisibleOrOnline = () => {
+      if (document.visibilityState === "hidden") return;
+      if (availabilityState.pendingInstall || Date.now() - availabilityLastFetchedAt >= AVAILABILITY_FRESHNESS_MS) {
+        void refreshSpeechAvailability(true);
+      }
+    };
+    window.addEventListener("piora:speech-settings-changed", onSettingsChanged);
+    window.addEventListener("online", onVisibleOrOnline);
+    document.addEventListener("visibilitychange", onVisibleOrOnline);
+    void refreshSpeechAvailability(false);
+    syncPendingInstallTimer();
+    availabilityCleanup = () => {
+      window.removeEventListener("piora:speech-settings-changed", onSettingsChanged);
+      window.removeEventListener("online", onVisibleOrOnline);
+      document.removeEventListener("visibilitychange", onVisibleOrOnline);
+      availabilityRequest?.abort();
+      availabilityRequest = null;
+      if (availabilityTimer) {
+        clearInterval(availabilityTimer);
+        availabilityTimer = null;
+      }
+    };
+  }
+  return () => {
+    availabilityListeners.delete(listener);
+    if (!availabilityListeners.size) {
+      availabilityCleanup?.();
+      availabilityCleanup = undefined;
+    }
+  };
+}
+
 function getAudioContextConstructor(): AudioContextConstructor | null {
   if (typeof window === "undefined") return null;
   const audioWindow = window as typeof window & { webkitAudioContext?: AudioContextConstructor };
@@ -46,7 +161,14 @@ function releaseCapture(capture: AudioCapture | null): void {
 }
 
 export function useLocalDictation({ language, onTranscript }: LocalDictationOptions) {
-  const [available, setAvailable] = useState(false);
+  const speechAvailability = useSyncExternalStore(
+    subscribeSpeechAvailability,
+    () => availabilityState,
+    () => initialAvailability,
+  );
+  const [captureSupported, setCaptureSupported] = useState(true);
+  const supported = typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && Boolean(getAudioContextConstructor());
+  const available = speechAvailability.available && supported && captureSupported;
   const [phase, setPhase] = useState<LocalDictationPhase>("idle");
   const [error, setError] = useState<LocalDictationError | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -54,7 +176,6 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
   const requestRef = useRef<AbortController | null>(null);
   const phaseRef = useRef<LocalDictationPhase>("idle");
   const mountedRef = useRef(true);
-  const pendingInstallRef = useRef(false);
   const onTranscriptRef = useRef(onTranscript);
   const languageRef = useRef(language);
   const stopRef = useRef<() => Promise<boolean>>(async () => false);
@@ -108,7 +229,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
     if (phaseRef.current !== "idle") return;
     const AudioContextClass = getAudioContextConstructor();
     if (!AudioContextClass || !navigator.mediaDevices?.getUserMedia) {
-      setAvailable(false);
+      setCaptureSupported(false);
       return;
     }
     setError(null);
@@ -205,30 +326,9 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
 
   const clearError = useCallback(() => setError(null), []);
 
-  const refreshAvailability = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch("/api/speech/transcribe", { cache: "no-store", signal });
-    if (!response.ok) return;
-    const payload = await response.json() as { available?: unknown; enabled?: unknown; installed?: unknown; installPhase?: unknown };
-    const nextAvailable = payload.available === true;
-    pendingInstallRef.current = payload.enabled === true && payload.installed !== true && payload.installPhase !== "error";
-    setAvailable(nextAvailable);
-    if (!nextAvailable && phaseRef.current !== "idle") cancel();
-  }, [cancel]);
-
   useEffect(() => {
-    const controller = new AbortController();
-    const refresh = () => { void refreshAvailability(controller.signal).catch(() => {}); };
-    refresh();
-    const timer = setInterval(() => { if (pendingInstallRef.current && !document.hidden) refresh(); }, 3000);
-    window.addEventListener("piora:speech-settings-changed", refresh);
-    window.addEventListener("focus", refresh);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-      window.removeEventListener("piora:speech-settings-changed", refresh);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [refreshAvailability]);
+    if (!available && phaseRef.current !== "idle") cancel();
+  }, [available, cancel]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -244,7 +344,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
 
   return {
     available,
-    supported: typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && Boolean(getAudioContextConstructor()),
+    supported,
     phase,
     error,
     toggle,

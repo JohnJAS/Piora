@@ -902,6 +902,7 @@ select:focus-visible,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  contain: style;
 }
 
 @container workspace-body (max-width: 760px) {
@@ -911,6 +912,7 @@ select:focus-visible,
 }
 
 .sidebar-container {
+  contain: style;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 48%, transparent), transparent 170px),
     color-mix(in srgb, var(--surface-muted) 94%, transparent) !important;
@@ -1426,6 +1428,7 @@ select:focus-visible,
 
 .right-panel-container {
   background: var(--surface) !important;
+  contain: style;
 }
 
 .right-panel-container.right-panel-maximized {

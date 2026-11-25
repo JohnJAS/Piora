@@ -23,4 +23,7 @@ export function registerNodeInstrumentation(): void {
   void bootstrapTeamRuntime().catch((error) => {
     console.error("[piora-team] startup recovery failed:", error instanceof Error ? error.message : String(error));
   });
+  void import("@/lib/rpc/runtime-warmup")
+    .then(({ scheduleRuntimeWarmup }) => scheduleRuntimeWarmup())
+    .catch(() => { /* Background runtime warmup is best-effort and never blocks startup. */ });
 }

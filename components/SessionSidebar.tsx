@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, useCallback, useRef } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useState, useCallback, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionFlags } from "@/lib/session-flags";
@@ -37,7 +37,7 @@ function createTemporarySessionId(): string {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSession, selectedSessionId, selectedSubagent, onOpenSubagent, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
+export const SessionSidebar = memo(forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSession, selectedSessionId, selectedSubagent, onOpenSubagent, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const primaryActionRef = useRef<HTMLButtonElement>(null);
@@ -608,4 +608,4 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     ) : null}
     </>
   );
-});
+}));
