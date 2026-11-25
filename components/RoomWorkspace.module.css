@@ -57,7 +57,7 @@
 .badge[data-phase="failed"], .badge[data-phase="error"] { background: color-mix(in srgb, #d05252 10%, var(--bg)); color: color-mix(in srgb, #d05252 80%, var(--text)); }
 .bubble, .assistantBody { width: fit-content; max-width: 100%; padding: 10px 13px; border-radius: 8px; background: var(--bg-panel); line-height: 1.75; overflow-wrap: anywhere; }
 .assistantBody { width: 100%; padding: 0; background: transparent; overflow-wrap: normal; }
-.bubble :global(p), .assistantBody :global(p) { margin-top: 0; margin-bottom: 8px; }
+.bubble :global(p), .assistantBody :global(p) { margin-top: 0; margin-bottom: 11px; }
 .bubble :global(p:last-child), .assistantBody :global(p:last-child) { margin-bottom: 0; }
 .messageActions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 20px; margin-top: 5px; }
 .messageActions button { display: inline-flex; align-items: center; gap: 4px; border: 0; padding: 2px 0; background: transparent; color: var(--text-dim); font-size: var(--text-xs); }

@@ -53,7 +53,7 @@ test("uses a responsive conversation column with resize and scroll rails", () =>
   assert.doesNotMatch(source, /maxWidth:\s*820/);
   assert.match(inputSource, /className="composer-column"/);
   assert.doesNotMatch(inputSource, /maxWidth:\s*820/);
-  assert.match(globalCss, /--chat-column-width, clamp\(820px, 72vw, 1180px\)/);
+  assert.match(globalCss, /--chat-column-width, clamp\(760px, 64vw, 920px\)/);
   assert.match(globalCss, /\.chat-column-resize-handle\.is-left\s*\{[\s\S]*?left:\s*max\(2px,/);
   assert.match(inputSource, /paddingLeft:\s*variant === "launcher" \? 0 : isMobile \? 16 : 36/);
   assert.match(globalCss, /\.chat-column-scroll-rail/);

@@ -146,7 +146,7 @@ function App() {
           <button type="button" onClick={() => void sideChat.openOrCreateSideChat({ storage: "temporary", forceNew: true })}>New Temp Side Chat</button>
         </header>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", flex: 1, minHeight: 0 }}>
-          <div style={{ minHeight: 0, overflow: "hidden" }}>
+          <div style={{ position: "relative", minHeight: 0, overflow: "hidden" }}>
             <ChatWindow
               visible
               session={session}
