@@ -1,10 +1,11 @@
 import { Type } from "typebox";
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ContextEvent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { getSSHSession, listSSHSessionSummariesForAgent } from "../lib/ssh/session-manager.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 
 const MAX_TRANSFER = 100 * 1024 * 1024;
 const MAX_TEXT = 2 * 1024 * 1024;
@@ -38,7 +39,52 @@ async function localPath(cwd: string, requested: string | undefined, forWrite: b
   if (sub === ".." || sub.startsWith("../") || sub.startsWith("..\\") || isAbsolute(sub)) throw new Error("Local path must stay within this task's workspace.");
   return actual;
 }
+function injectSshConnectionsIntoMessages(
+  messages: ContextEvent["messages"],
+  note: string,
+): ContextEvent["messages"] | undefined {
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  if (lastUserIndex >= 0) {
+    const target = messages[lastUserIndex];
+    if (target && target.role === "user") {
+      if (typeof target.content === "string") {
+        if (target.content.includes("<current_task_ssh_connections>")) return undefined;
+        const updated: ContextEvent["messages"][number] = {
+          ...target,
+          content: target.content ? `${note}\n\n${target.content}` : note,
+        };
+        return messages.map((message, index) => (index === lastUserIndex ? updated : message));
+      }
+      if (Array.isArray(target.content)) {
+        const blocks = target.content;
+        const already = blocks.some(
+          (block) => block.type === "text" && block.text.includes("<current_task_ssh_connections>"),
+        );
+        if (already) return undefined;
+        const updated: ContextEvent["messages"][number] = {
+          ...target,
+          content: [{ type: "text" as const, text: note }, ...blocks],
+        };
+        return messages.map((message, index) => (index === lastUserIndex ? updated : message));
+      }
+    }
+  }
+  const last = messages[messages.length - 1];
+  if (last?.role === "custom" && last.customType === "piora-ssh-connections") return undefined;
+  return [
+    ...messages,
+    { role: "custom", customType: "piora-ssh-connections", display: false, content: note, timestamp: 0 },
+  ];
+}
+
 export default function pioraSSH(api: ExtensionAPI) {
+  let sshSelectedForTurn = false;
   api.registerTool(defineTool({
     name: "ssh", label: "Task SSH connections",
     description: "Use only SSH connections explicitly linked to this task. List live sessions, run a command in one remote terminal, and manage remote files. Local bash always remains local.",
@@ -123,11 +169,25 @@ export default function pioraSSH(api: ExtensionAPI) {
       throw new Error("Unsupported SSH action.");
     },
   }));
-  api.on("before_agent_start", (event, ctx) => {
-    if (!event.systemPromptOptions.selectedTools?.includes("ssh")) return;
+  api.on("before_agent_start", (event) => {
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    sshSelectedForTurn = selected.includes("ssh") && !hidden.has("ssh");
+    applyExtensionPromptGuidance(event, {
+      key: "ssh",
+      toolNames: ["ssh"],
+      active: sshSelectedForTurn,
+    });
+  });
+
+  api.on("context", (event, ctx) => {
+    const activeTools = typeof api.getActiveTools === "function" ? api.getActiveTools() : null;
+    const sshActive = activeTools ? activeTools.includes("ssh") : sshSelectedForTurn;
+    if (!sshActive) return;
     const taskId = ctx.sessionManager.getSessionId();
     if (!listSSHSessionSummariesForAgent(taskId).length) return;
-    const list = inventory(taskId);
-    return { systemPrompt: event.systemPrompt + "\n\n<current_task_ssh_connections>\n" + list + "\nUse the ssh tool with the exact session ID for remote work. Saved but disconnected hosts are unavailable. Local bash remains local.\n</current_task_ssh_connections>" };
+    const note = `<current_task_ssh_connections>\n${inventory(taskId)}\nUse the ssh tool with the exact session ID for remote work. Saved but disconnected hosts are unavailable. Local bash remains local.\n</current_task_ssh_connections>`;
+    const messages = injectSshConnectionsIntoMessages(event.messages, note);
+    return messages ? { messages } : undefined;
   });
 }

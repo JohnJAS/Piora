@@ -29,11 +29,44 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await page.addInitScript(() => localStorage.setItem('pi-locale', 'zh-CN'));
     let approvalsEnabled = true;
     let reserve = null;
+    let runtimePrompt = {
+      version: 1,
+      mergeCompact: true,
+      alignCliCompaction: true,
+      extensions: {
+        browser: true,
+        automations: false,
+        userInput: false,
+        fileTools: false,
+        fileReferences: false,
+        subagents: true,
+        ssh: true,
+        harmony: false,
+        computer: true,
+        room: false,
+        meme: false,
+      },
+    };
     await page.route('https://chat-settings.test/**', async route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/settings/tool-approval') {
         if (route.request().method() === 'PUT') approvalsEnabled = route.request().postDataJSON().enabled;
         return route.fulfill({ json: { enabled: approvalsEnabled } });
+      }
+      if (url.pathname === '/api/settings/runtime-prompt') {
+        if (route.request().method() === 'PUT') {
+          const patch = route.request().postDataJSON();
+          runtimePrompt = {
+            ...runtimePrompt,
+            ...(typeof patch.mergeCompact === 'boolean' ? { mergeCompact: patch.mergeCompact } : {}),
+            ...(typeof patch.alignCliCompaction === 'boolean' ? { alignCliCompaction: patch.alignCliCompaction } : {}),
+            extensions: {
+              ...runtimePrompt.extensions,
+              ...(patch.extensions ?? {}),
+            },
+          };
+        }
+        return route.fulfill({ json: runtimePrompt });
       }
       if (url.pathname.endsWith('.js')) return route.fulfill({ contentType: 'text/javascript', body: await readFile(path.join(directory, path.basename(url.pathname))) });
       if (url.pathname === '/api/models-config/retry') return route.fulfill({ json: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: 60000 }, httpIdleTimeoutMs: 120000 } });
@@ -65,9 +98,21 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     const groups = await page.locator('[class*="settingsSectionHeading"]').allTextContents();
     assert.deepEqual(groups, ['1. 消息输入与阅读', '2. 回复辅助', '3. 任务运行', '4. 权限控制', '5. 系统提示词与优化', '6. 自动标题']);
     assert.equal(await toggle.locator('xpath=ancestor::*[contains(@class, "runtimeCards")]').count(), 0, 'permissions have their own section outside task execution');
-    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'general.runningStatusLabel', 'general.modelRetry', 'models.compaction', 'conversation.systemPrompt', 'conversation.promptOptimizer', 'conversation.titleModel']) {
+    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'general.runningStatusLabel', 'general.modelRetry', 'models.compaction', 'conversation.systemPrompt', 'conversation.runtimePrompt', 'conversation.promptOptimizer', 'conversation.titleModel']) {
       assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available exactly once`);
     }
+    const runtimeCard = page.locator('[data-settings-id="conversation.runtimePrompt"]');
+    const fileToolsSwitch = runtimeCard.getByRole('switch', { name: '文件工具引导（易冲突）', exact: true });
+    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'false');
+    await fileToolsSwitch.click();
+    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'true');
+    assert.equal(runtimePrompt.extensions.fileTools, true);
+    await runtimeCard.getByRole('button', { name: '对齐 Pi CLI（全部关闭）', exact: true }).click();
+    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'false');
+    assert.equal(runtimePrompt.extensions.browser, false);
+    await page.reload();
+    await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
+    assert.equal(await page.locator('[data-settings-id="conversation.runtimePrompt"]').getByRole('switch', { name: '内置浏览器说明', exact: true }).getAttribute('aria-checked'), 'false');
     const compaction = page.locator('[data-settings-id="models.compaction"]');
     const reserveInput = compaction.getByPlaceholder('随模型计算');
     const saveCompaction = compaction.getByRole('button', { name: '保存', exact: true });

@@ -104,6 +104,13 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "conversation.promptOptimizer", section: "conversation", labelKey: "settings.promptOptimizerTitle", descriptionKey: "settings.promptOptimizerDescription", keywords: ["prompt", "rewrite", "提示词", "优化"] },
   { id: "conversation.titleModel", section: "conversation", labelKey: "settings.sessionTitleModelTitle", descriptionKey: "settings.sessionTitleModelDescription", keywords: ["title", "model", "标题", "模型"] },
   { id: "conversation.systemPrompt", section: "conversation", labelKey: "system.prompt", descriptionKey: "system.description", keywords: ["system prompt", "instruction", "系统提示词", "指令"] },
+  {
+    id: "conversation.runtimePrompt",
+    section: "conversation",
+    labelKey: "runtimePrompt.title",
+    descriptionKey: "runtimePrompt.description",
+    keywords: ["extension", "prompt", "cli", "merge", "compact", "compaction", "guidance", "rules", "扩展", "说明", "合并", "压缩", "对齐", "冲突", "提示词"],
+  },
 
   { id: "shortcuts", section: "shortcuts", labelKey: "settings.shortcuts", descriptionKey: "settings.shortcutsDescription", keywords: ["keyboard", "hotkey", "键盘", "快捷键"] },
   { id: "shortcuts.palette", section: "shortcuts", labelKey: "shortcuts.commandPalette", descriptionKey: "shortcuts.commandPaletteDescription", keywords: ["ctrl k", "command", "命令面板"] },

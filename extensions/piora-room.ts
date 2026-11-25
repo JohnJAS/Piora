@@ -1,4 +1,5 @@
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 import { roomMessageAttribution, roomMessageSender, ROOM_SENDER_AUTHORITY_NOTE } from "../lib/room-sender.ts";
 import { Type } from "typebox";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -404,6 +405,13 @@ export default function pioraRoom(api: ExtensionAPI) {
 
   api.on("session_start", (_event, ctx) => updateRoomStatus(ctx));
   api.on("before_agent_start", (event, ctx) => {
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    applyExtensionPromptGuidance(event, {
+      key: "room",
+      toolNames: ["piora_room"],
+      active: selected.includes("piora_room") && !hidden.has("piora_room"),
+    });
     const sessionId = ctx.sessionManager.getSessionId();
     const team = dynamicTeamContext(sessionId);
     if (!team) return;

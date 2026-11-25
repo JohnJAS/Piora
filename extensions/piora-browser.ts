@@ -2,6 +2,7 @@ import { BROWSER_LOGIN_STATE_SCRIPT, readBrowserLoginState } from "../desktop/sr
 import { recoverBrowserLogin } from "../desktop/src/browser-login-recovery.ts";
 import { browserUploadNotice } from "../desktop/src/browser-agent-logic.ts";
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 import { existsSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -916,14 +917,13 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
 export default function pioraBrowser(api: ExtensionAPI) {
   api.registerTool(browserTool);
   api.on?.("before_agent_start", (event) => {
-    if (!event.systemPromptOptions.selectedTools?.includes("browser")) return;
-    const capability = `<piora_runtime_capability name="browser" availability="active">
-Use \`browser\` (${APP_DISPLAY_NAME}'s background/built-in browser) for online information, URLs, search, forms, login, and web verification. Start with \`browser({ action: "open", url })\` or \`browser({ action: "tabs" })\`, then follow its tool schema for snapshot refs and \`wait_for_user\` handoffs. Never claim browsing is unavailable before checking this tool.
-</piora_runtime_capability>`;
-    if (event.systemPrompt.includes('<piora_runtime_capability name="browser"')) return;
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n${capability}`,
-    };
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    applyExtensionPromptGuidance(event, {
+      key: "browser",
+      toolNames: ["browser"],
+      active: selected.includes("browser") && !hidden.has("browser"),
+    });
   });
   api.on?.("agent_end", (_event, ctx) => {
     if (!desktopBackendSelected()) return;

@@ -54,6 +54,7 @@ import {
   resolveSessionSystemPrompt,
 } from "../session-system-prompt";
 import { listSSHSessionSummariesForAgent, subscribeSSHRegistry } from "../ssh/session-manager";
+import { readRuntimePromptSettings } from "../prompt-runtime/settings";
 import { readSystemPromptConfig } from "../system-prompt-config";
 import { buildSideSystemInstructions } from "../side-chat/policy";
 import { readSideChatSettings } from "../side-chat/settings";
@@ -232,7 +233,9 @@ export async function startRpcSession(
                   readSystemPromptConfig(),
                 ),
                 appendSystemPromptOverride: (baseAppend) => buildSessionAppendSystemPrompt(baseAppend, {
-                  fileReferenceInstructions: FILE_REFERENCE_INSTRUCTIONS,
+                  fileReferenceInstructions: readRuntimePromptSettings().extensions.fileReferences
+                    ? FILE_REFERENCE_INSTRUCTIONS
+                    : undefined,
                   subagentSystemPrompt: options.subagentSystemPrompt,
                   sideChatInstructions: sideChatMeta
                     ? buildSideSystemInstructions(sideChatMeta.storage, sideChatMeta.parentSessionId)

@@ -1,4 +1,5 @@
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 import { Type } from "typebox";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -123,12 +124,12 @@ export default function pioraUserInput(api: ExtensionAPI) {
   }));
 
   api.on?.("before_agent_start", (event) => {
-    if (!event.systemPromptOptions.selectedTools?.includes("piora_request_user_input")) return;
-    if (event.systemPrompt.includes('<piora_runtime_capability name="user_input_card"')) return;
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n<piora_runtime_capability name="user_input_card" availability="active">
-${APP_DISPLAY_NAME} can display a native interactive question card through the \`piora_request_user_input\` tool and return the user's structured answers. When you genuinely need the user to choose among options, select multiple applicable items, or provide missing text before continuing, prefer this tool over an unstructured list of questions in ordinary chat. Ask no more than three focused questions per call, do not request secrets, wait for the result, and never invent an answer after cancellation. Cards time out after 60 seconds by default (timeoutSeconds: 30–300). After timeout, continue work supported by existing instructions, state assumptions, and do not immediately repeat the same questions. Silence is not consent; explain any essential missing information instead of guessing it.
-</piora_runtime_capability>`,
-    };
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    applyExtensionPromptGuidance(event, {
+      key: "userInput",
+      toolNames: ["piora_request_user_input"],
+      active: selected.includes("piora_request_user_input") && !hidden.has("piora_request_user_input"),
+    });
   });
 }
