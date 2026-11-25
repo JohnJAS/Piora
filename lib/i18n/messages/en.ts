@@ -2,6 +2,7 @@ import { memesEn } from "./memes";
 import { workflowsEn } from "./workflows";
 import { subagentsEn } from "./subagents";
 import { characterThemesEn } from "./character-themes";
+import { flagshipThemesEn } from "./flagship-themes";
 import { desktopExtensionsEn } from "./desktop-extensions";
 import { brandText } from "../../branding";
 import { roomUxEn } from "./room-ux";
@@ -24,6 +25,7 @@ export const enLocale: LocalePlugin = {
     ...workflowsEn,
     ...subagentsEn,
     ...characterThemesEn,
+    ...flagshipThemesEn,
     ...desktopExtensionsEn,
     ...memesEn,
     "permission.settings.title": "Permission controls",
@@ -1477,6 +1479,13 @@ export const enLocale: LocalePlugin = {
     "browser.reload": "Reload",
     "browser.address": "Address",
     "browser.addressPlaceholder": "Enter URL",
+    "browser.searchOrAddressPlaceholder": "Search the web or enter a URL",
+    "browser.homeFilePlaceholder": "Find project files or enter a URL",
+    "browser.homeSearch": "Browser home search",
+    "browser.homeSubmit": "Go or search the web",
+    "browser.homeShortcuts": "Browser home shortcuts",
+    "browser.homeFiles": "Project files",
+    "browser.homeHistory": "Browsing history",
     "browser.startTitle": "Start browsing",
     "browser.startDescription": "Enter a URL to open a page",
     "browser.pagePreview": "Interactive browser page",
@@ -1486,8 +1495,6 @@ export const enLocale: LocalePlugin = {
     "browser.starting": "Starting the built-in browser…",
     "browser.unavailable": "The built-in browser is unavailable",
     "browser.actionFailed": "Browser action failed",
-    "browser.welcomeTitle": brandText("Welcome to Piora Browser"),
-    "browser.welcomeDescription": "Live web pages appear directly in the right panel, with sign-ins kept in a separate profile on this device.",
     "browser.importChrome": "Import Chrome bookmarks bar",
     "browser.siteLogin": "Site login settings",
     "browser.skipImport": "Not now",

@@ -93,3 +93,26 @@ export function selectionForSessionSystemPromptBinding(
   if (!binding || binding.source === "default" || !binding.templateId) return { mode: "default" };
   return { mode: "template", templateId: binding.templateId };
 }
+
+export interface SessionAppendSystemPromptOptions {
+  fileReferenceInstructions?: string;
+  subagentSystemPrompt?: string;
+  sideChatInstructions?: string;
+}
+
+export function buildSessionAppendSystemPrompt(
+  baseAppend: readonly string[],
+  options: SessionAppendSystemPromptOptions = {},
+): string[] {
+  const appended = [...baseAppend];
+  if (options.fileReferenceInstructions) {
+    appended.push(`<file_references>\n${options.fileReferenceInstructions}\n</file_references>`);
+  }
+  if (options.subagentSystemPrompt) {
+    appended.push(`<subagent_role>\n${options.subagentSystemPrompt}\n</subagent_role>`);
+  }
+  if (options.sideChatInstructions) {
+    appended.push(options.sideChatInstructions);
+  }
+  return appended;
+}

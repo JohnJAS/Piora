@@ -1,5 +1,6 @@
 import characterManifestJson from "../public/themes/character-backgrounds/manifest.json";
 import manifestJson from "../public/themes/dream-backgrounds/manifest.json";
+import { FLAGSHIP_BACKGROUND_PRESETS, isFlagshipTheme } from "./appearance/flagship-themes";
 import { CHARACTER_THEMES } from "./character-themes";
 import { getCharacterWallpaperRig } from "./character-wallpaper-rigs";
 
@@ -82,6 +83,8 @@ export interface BackgroundPreference {
   filePanelOverlay: number;
   motionEnabled?: boolean;
   live2dEnabled?: boolean;
+  agentReactiveEnabled?: boolean;
+  performanceEnabled?: boolean;
 }
 
 export const DEFAULT_BACKGROUND_PREFERENCE: Readonly<BackgroundPreference> = Object.freeze({
@@ -184,6 +187,7 @@ export const BACKGROUND_PRESETS = Object.freeze([
     ? [preset, { ...preset, id: GLACIER_MOTION_BACKGROUND_ID, nameKey: "background.preset.glacierMotion" }]
     : [preset]),
   ...CHARACTER_BACKGROUND_MANIFEST.presets,
+  ...FLAGSHIP_BACKGROUND_PRESETS,
 ]);
 
 const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
@@ -203,9 +207,10 @@ export function getBackgroundPreset(id: string | null | undefined): BackgroundPr
   return id ? PRESETS_BY_ID.get(id) : undefined;
 }
 
-export type BackgroundMotionKind = "character" | "glacier";
+export type BackgroundMotionKind = "character" | "glacier" | "flagship";
 
 export function getBackgroundMotionKind(id: string | null | undefined): BackgroundMotionKind | undefined {
+  if (isFlagshipTheme(id)) return "flagship";
   if (id === GLACIER_MOTION_BACKGROUND_ID) return "glacier";
   return getCharacterWallpaperRig(id) ? "character" : undefined;
 }
@@ -230,6 +235,8 @@ export function normalizeBackgroundPreference(value: unknown): BackgroundPrefere
     filePanelOverlay,
     ...(typeof value.motionEnabled === "boolean" ? { motionEnabled: value.motionEnabled } : {}),
     ...(typeof value.live2dEnabled === "boolean" ? { live2dEnabled: value.live2dEnabled } : {}),
+    ...(typeof value.agentReactiveEnabled === "boolean" ? { agentReactiveEnabled: value.agentReactiveEnabled } : {}),
+    ...(typeof value.performanceEnabled === "boolean" ? { performanceEnabled: value.performanceEnabled } : {}),
   };
 
   if (value.source === "builtin" && typeof value.presetId === "string" && getBackgroundPreset(value.presetId)) {

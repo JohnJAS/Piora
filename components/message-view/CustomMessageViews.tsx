@@ -6,6 +6,7 @@ import { copyText } from "@/lib/clipboard";
 import type { CommandExecutionData } from "@/lib/command-execution";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import type { BashExecutionMessage, CustomMessage } from "@/lib/types";
+import { WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE } from "@/lib/workflow/goal-continuation";
 import { AliIcon } from "../AliIcon";
 import { ChatDisclosure, DisclosureChevron } from "../ChatDisclosure";
 import { CommandExecutionCard } from "../CommandExecutionView";
@@ -95,9 +96,21 @@ export function CustomMessageView({
   const [openImageIndex, setOpenImageIndex] = useState<number | null>(null);
   const text = getMessageText(message.content);
   const images = getMessageImages(message.content);
-  const hasDetails = message.details !== undefined;
+  const isGoalAutoContinue = message.customType === WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE;
+  const hasDetails = !isGoalAutoContinue && message.details !== undefined;
   const detailsText = hasDetails ? safeJson(message.details) : "";
-  const title = formatCustomType(message.customType);
+  const goalContinueDetails = isGoalAutoContinue && message.details && typeof message.details === "object"
+    ? (message.details as { completedTurns?: unknown; turnBudget?: unknown })
+    : null;
+  const goalContinueMeta = goalContinueDetails
+    && typeof goalContinueDetails.completedTurns === "number"
+    && typeof goalContinueDetails.turnBudget === "number"
+    ? t("workflow.goal.autoContinueTurn", {
+        next: Math.min(goalContinueDetails.completedTurns + 1, goalContinueDetails.turnBudget),
+        budget: goalContinueDetails.turnBudget,
+      })
+    : null;
+  const title = isGoalAutoContinue ? t("workflow.goal.autoContinueLabel") : formatCustomType(message.customType);
   const time = formatTime(message.timestamp);
 
   const copyContent = () => {
@@ -159,8 +172,9 @@ export function CustomMessageView({
         <div className="chat-disclosure is-expanded custom-message-card">
           <div className="chat-disclosure-header">
             <div className="chat-disclosure-heading">
-              <AliIcon name="message" size={14} aria-hidden="true" />
+              <AliIcon name={isGoalAutoContinue ? "target" : "message"} size={14} aria-hidden="true" />
               <span className="chat-disclosure-label">{title}</span>
+              {goalContinueMeta ? <span className="chat-disclosure-meta">{goalContinueMeta}</span> : null}
               {time ? <span className="chat-disclosure-meta">{time}</span> : null}
             </div>
             <div className="chat-disclosure-actions">{actions}</div>

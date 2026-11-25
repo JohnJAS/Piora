@@ -473,10 +473,24 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
       {/* Native WebContentsView sits above DOM portals. Keep the panel mounted,
           but suspend its native surface until the tool menu closes. */}
-      {activeTab === "browser" ? <div className={styles.capabilityPanel}>{capabilityAccess("browser")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`browser:${props.sessionId ?? "manual"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && !addMenuOpen} maximized={props.maximized} sessionId={props.sessionId} navigationRequest={props.answerNavigation ?? browserNavigation} onNavigationConsumed={(id) => {
-        props.onAnswerNavigationConsumed?.(id);
-        setBrowserNavigation(current => current?.id === id ? undefined : current);
-      }} /></RenderErrorBoundary></div></div> : null}
+      {activeTab === "browser" ? <div className={styles.capabilityPanel}>{capabilityAccess("browser")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`browser:${props.sessionId ?? "manual"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}>
+        <BrowserPanel
+          active={active && !addMenuOpen}
+          maximized={props.maximized}
+          sessionId={props.sessionId}
+          workspace={cwd ? {
+            cwd,
+            openFile: (path, name) => { props.onOpenFile(path, name); selectTool("files"); },
+            openFiles: () => { selectTool("files"); setFileNavMode("tree"); setTreeDrawerOpen(true); },
+            openTerminal: () => selectTool("commands"),
+          } : undefined}
+          navigationRequest={props.answerNavigation ?? browserNavigation}
+          onNavigationConsumed={(id) => {
+            props.onAnswerNavigationConsumed?.(id);
+            setBrowserNavigation(current => current?.id === id ? undefined : current);
+          }}
+        />
+      </RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
       {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} maximized={props.maximized} onMaximizedChange={props.onMaximizedChange} cwd={cwd} sessionId={props.sessionId} sessionRunning={props.sessionRunning} onGuideAgent={props.onGuideAgent} onOpenLocalTerminal={() => onActiveTabChange("commands")} /></RenderErrorBoundary></div></div> : null}

@@ -2,6 +2,15 @@ import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getWorkflowRuntime, planToolAllowed, type WorkflowRuntime } from "../lib/workflow-runtime.ts";
 import type { WorkflowStore } from "../lib/workflow-store.ts";
+import {
+  buildIncompleteTurnResumePrompt,
+  classifyGoalAssistantOutcome,
+  injectWorkflowContextIntoMessages,
+  MAX_INCOMPLETE_RESUMES_PER_TURN,
+  serializeWorkflowContextSnapshot,
+  WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE,
+  WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE,
+} from "../lib/workflow/goal-continuation.ts";
 
 const TodoStepSchema = Type.Object({
   id: Type.String({ minLength: 1, maxLength: 100 }),
@@ -14,26 +23,50 @@ export function createWorkflowExtension(options: { store?: WorkflowStore } = {})
   return (api: ExtensionAPI) => {
     let runtime: WorkflowRuntime | undefined;
     let detach: (() => void) | undefined;
+    let lastAssistantInRun: Record<string, unknown> | undefined;
+    let pendingIncompleteResume = false;
+    let incompleteResumesInTurn = 0;
+
     api.on("session_start", (_event, ctx) => {
       detach?.();
+      lastAssistantInRun = undefined;
+      pendingIncompleteResume = false;
+      incompleteResumesInTurn = 0;
       runtime = getWorkflowRuntime(ctx.sessionManager.getSessionId(), options.store);
       detach = runtime.attach(() => api.getActiveTools());
     });
-    api.on("session_shutdown", () => { runtime?.dispose(); detach?.(); detach = undefined; });
+    api.on("session_shutdown", () => {
+      lastAssistantInRun = undefined;
+      pendingIncompleteResume = false;
+      incompleteResumesInTurn = 0;
+      runtime?.dispose();
+      detach?.();
+      detach = undefined;
+    });
     api.on("before_agent_start", event => {
+      lastAssistantInRun = undefined;
+      pendingIncompleteResume = false;
+      incompleteResumesInTurn = 0;
       const instruction = runtime?.beginTurn();
       if (instruction) return { systemPrompt: `${event.systemPrompt}\n\n<piora_workflow>\n${instruction}\n</piora_workflow>` };
     });
     // SDK follow-up runs emit agent_start without another before_agent_start.
-    // Capture every loop's identity so budget settlement cannot silently stop.
-    api.on("agent_start", () => { runtime?.beginTurn(); });
+    // Capture every loop's identity so budget settlement cannot silently stop,
+    // while keeping incomplete-turn recovery inside the same logical turn.
+    api.on("agent_start", () => {
+      lastAssistantInRun = undefined;
+      if (pendingIncompleteResume) {
+        pendingIncompleteResume = false;
+        return;
+      }
+      incompleteResumesInTurn = 0;
+      runtime?.beginTurn();
+    });
     api.on("context", event => {
       const snapshot = runtime?.getSnapshot();
       if (!snapshot?.current || snapshot.mode === "agent") return;
-      return { messages: [...event.messages, {
-        role: "custom" as const, customType: "piora-workflow-context", display: false, timestamp: Date.now(),
-        content: `Current host workflow state. Preserve the original objective; this snapshot survives context compaction.\n${JSON.stringify(snapshot.current)}`,
-      }] };
+      const stateText = serializeWorkflowContextSnapshot(snapshot.current, snapshot.todoSteps);
+      return { messages: injectWorkflowContextIntoMessages(event.messages, stateText) };
     });
     api.on("tool_call", event => {
       let state;
@@ -43,13 +76,91 @@ export function createWorkflowExtension(options: { store?: WorkflowStore } = {})
       if (state?.mode === "plan" && state.current?.status === "awaiting_approval") return { block: true, reason: "The plan is awaiting user review; no further tools may run until the user decides." };
       if (state?.mode === "goal" && state.current && state.current.status !== "running") return { block: true, reason: "The goal is no longer running. Wait for the user's next action." };
     });
-    api.on("tool_result", event => { if (!event.isError) runtime?.recordToolEvidence(event.toolName, event.content); });
+    api.on("tool_result", event => {
+      incompleteResumesInTurn = 0;
+      if (!event.isError) runtime?.recordToolEvidence(event.toolName, event.content);
+    });
     api.on("agent_end", event => {
       const last = [...event.messages].reverse().find(message => message.role === "assistant");
-      const error = last && "stopReason" in last && ["error", "aborted"].includes(last.stopReason);
-      if (last && "stopReason" in last && last.stopReason === "aborted") { runtime?.onAbort(); return; }
-      const continuation = runtime?.endTurn(Boolean(error));
-      if (continuation) api.sendUserMessage(continuation, { deliverAs: "followUp" });
+      lastAssistantInRun = last as Record<string, unknown> | undefined;
+      if (last && "stopReason" in last && last.stopReason === "aborted") {
+        runtime?.onAbort();
+      }
+    });
+    api.on("agent_before_settle", event => {
+      const last = lastAssistantInRun
+        ?? [...event.context.contextMessages].reverse().find(message => message.role === "assistant");
+      lastAssistantInRun = undefined;
+
+      if (!runtime) return;
+      const snapshot = runtime.getSnapshot();
+      if (snapshot.mode !== "goal" || snapshot.current?.kind !== "goal") return;
+
+      if (event.outcome === "aborted") {
+        runtime.onAbort();
+        return;
+      }
+      if (event.outcome === "error") {
+        runtime.endTurn(true);
+        return;
+      }
+
+      const kind = classifyGoalAssistantOutcome(last);
+      if (kind === "aborted") {
+        runtime.onAbort();
+        return;
+      }
+      if (kind === "error") {
+        runtime.endTurn(true);
+        return;
+      }
+      if (kind === "terminated_tool_batch") {
+        runtime.onAbort();
+        return;
+      }
+      if (
+        (kind === "incomplete_truncated" || kind === "incomplete_thinking_only")
+        && runtime.canContinueIncompleteTurn()
+        && incompleteResumesInTurn < MAX_INCOMPLETE_RESUMES_PER_TURN
+      ) {
+        incompleteResumesInTurn++;
+        pendingIncompleteResume = true;
+        return {
+          entries: [
+            ...event.entries,
+            {
+              type: "custom_message" as const,
+              customType: WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE,
+              content: buildIncompleteTurnResumePrompt(kind),
+              display: false,
+              details: { runId: snapshot.current.id, attempt: incompleteResumesInTurn, kind },
+            },
+          ],
+          continue: true,
+        };
+      }
+
+      incompleteResumesInTurn = 0;
+      const continuation = runtime.endTurn(false);
+      if (!continuation) return;
+      const after = runtime.getSnapshot();
+      return {
+        entries: [
+          ...event.entries,
+          {
+            type: "custom_message" as const,
+            customType: WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE,
+            content: continuation,
+            display: true,
+            details: {
+              runId: after.current?.id,
+              completedTurns: after.current?.turnsUsed,
+              turnBudget: after.current?.turnBudget,
+            },
+          },
+        ],
+        continue: true,
+      };
     });
     api.registerTool(defineTool({
       name: "piora_submit_plan", label: "Submit plan", description: "Submit a complete plan for user review in Piora Plan mode. Include objective, scope, implementation steps and validation. The host persists this Markdown snapshot as an editable PLAN.md; this does not authorize implementation.",

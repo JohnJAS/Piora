@@ -24,7 +24,8 @@ import { normalizeAnswerLink, type BrowserNavigationRequest } from "@/lib/answer
 import { AliIcon } from "../AliIcon";
 import { BrowserAddress } from "./browser/BrowserAddress";
 import { BrowserControls } from "./browser/BrowserControls";
-import type { ToolsBridge } from "./browser/shared";
+import { BrowserHome, type BrowserHomeWorkspace } from "./browser/BrowserHome";
+import { openBrowserSettings, type ToolsBridge } from "./browser/shared";
 import styles from "./WorkspacePanel.module.css";
 
 type BrowserState = {
@@ -164,7 +165,14 @@ function useRequestedNavigation(request: BrowserNavigationProps["navigationReque
   }, [request, ready, navigate, consumed]);
 }
 
-export function BrowserPanel({ active, maximized, sessionId, navigationRequest, onNavigationConsumed }: { active: boolean; maximized: boolean; sessionId: string | null } & BrowserNavigationProps) {
+interface BrowserPanelProps extends BrowserNavigationProps {
+  active: boolean;
+  maximized: boolean;
+  sessionId: string | null;
+  workspace?: BrowserHomeWorkspace;
+}
+
+export function BrowserPanel({ active, maximized, sessionId, workspace, navigationRequest, onNavigationConsumed }: BrowserPanelProps) {
   const { t } = useI18n();
   const [desktopBridge, setDesktopBridge] = useState<DesktopBrowserBridge | null | undefined>(undefined);
   const [agentBackend, setAgentBackend] = useState<DesktopBrowserAgentBackend | null>(null);
@@ -203,15 +211,15 @@ export function BrowserPanel({ active, maximized, sessionId, navigationRequest, 
   return <div className={styles.browserRoot}>
     <div className={styles.browserModeContent}>
       {desktopLinked
-        ? <DesktopBrowserPanel linkAgent active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
+        ? <DesktopBrowserPanel linkAgent active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} workspace={workspace} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
         : desktopBridge
-        ? <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
+        ? <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} workspace={workspace} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
         : <ScreenshotBrowserPanel active={active} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />}
     </div>
   </div>;
 }
 
-function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationRequest, onNavigationConsumed, linkAgent = false }: { active: boolean; bridge: DesktopBrowserBridge; maximized: boolean; sessionId: string | null; linkAgent?: boolean } & BrowserNavigationProps) {
+function DesktopBrowserPanel({ active, bridge, maximized, sessionId, workspace, navigationRequest, onNavigationConsumed, linkAgent = false }: BrowserPanelProps & { bridge: DesktopBrowserBridge; linkAgent?: boolean }) {
   const { t } = useI18n();
   const [readySession, setReadySession] = useState<string | null | undefined>(undefined);
   const [state, setState] = useState<DesktopBrowserState | null>(null);
@@ -229,6 +237,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   followingRef.current = followingAgent;
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const addressTarget = useRef<Pick<DesktopBrowserState, "sessionId" | "activeTabId"> | null>(null);
   const [toolSlot, setToolSlot] = useState<HTMLDivElement | null>(null);
   const [deviceDragging, setDeviceDragging] = useState(false);
   const viewportSyncRef = useRef<ReturnType<typeof createBrowserViewportSync> | null>(null);
@@ -250,7 +259,9 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   const applyState = useCallback((next: DesktopBrowserState | null) => {
     if (!next) return;
     setState(next);
-    if (document.activeElement !== addressRef.current) {
+    const tabChanged = next.sessionId !== addressTarget.current?.sessionId || next.activeTabId !== addressTarget.current?.activeTabId;
+    addressTarget.current = next;
+    if (tabChanged || document.activeElement !== addressRef.current) {
       setAddress(next.url === "about:blank" ? "" : next.url);
     }
     setError(null);
@@ -268,10 +279,11 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
 
   useEffect(() => {
     let cancelled = false;
-    setBookmarkProfiles(storedBookmarkProfiles());
+    const savedBookmarks = storedBookmarkProfiles();
+    setBookmarkProfiles(savedBookmarks);
     const onboardingComplete = window.localStorage.getItem(BROWSER_ONBOARDING_KEY) === "done";
     setShowOnboarding(!onboardingComplete);
-    if (onboardingComplete) {
+    if (onboardingComplete && savedBookmarks.length > 0) {
       void bridge.importChromeBookmarks().then((result) => {
         if (cancelled || !result || result.bookmarkCount === 0) return;
         storeBookmarkProfiles(result.profiles);
@@ -459,6 +471,8 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   };
 
   const blank = !state || state.url === "about:blank";
+  const ready = readySession === sessionId;
+  const showHome = ready && blank && !state?.vaultProtected;
   const barNodes = bookmarkBarNodes(bookmarkProfiles);
   const openBookmarkMenu = async (node: ImportedChromeBookmarkNode, button: HTMLButtonElement) => {
     if (node.type !== "folder") return;
@@ -571,16 +585,16 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       <button className={styles.browserNewTab} type="button" aria-label={t("browser.newTab")} disabled={state?.tabCount !== undefined && state.tabCount >= (state.tabLimit ?? 20) && !state.idleTabCount} onClick={() => void act({ action: "new_tab" })}><AliIcon name="plus" size={14} /></button>
     </div>
     {state?.tabCount !== undefined && state.tabCount >= (state.tabLimit ?? 20) ? <div className={styles.browserError} role="status">{t("browser.tabLimitReached", { limit: state.tabLimit ?? 20 })}</div> : null}
-    <div className={styles.browserToolbar}>
-      <div className={styles.browserNavigation}>
+    <div className={styles.browserToolbar} data-home={showHome ? "true" : undefined}>
+      {(!showHome || state?.canGoBack || state?.canGoForward) && <div className={styles.browserNavigation}>
       <button type="button" aria-label={t("browser.back")} disabled={!state?.canGoBack} onClick={() => void act({ action: "back" })}><AliIcon name="arrowleft" size={14} /></button>
       <button type="button" aria-label={t("browser.forward")} disabled={!state?.canGoForward} onClick={() => void act({ action: "forward" })}><AliIcon name="arrowright" size={14} /></button>
-      <button type="button" aria-label={t("browser.reload")} disabled={!state} onClick={() => void act({ action: "reload" })}><AliIcon name="reload" size={14} /></button>
-      </div>
-      <BrowserAddress key={state?.activeTabId ?? "starting"} value={address} change={setAddress} inputRef={addressRef} label={t("browser.address")}
-        placeholder={t("browser.addressPlaceholder")} invoke={bridge.tools} slot={toolSlot} navigate={url => void act({action:"navigate", url})} />
-      <button type="button" aria-label={t("browser.siteLogin")} title={t("browser.siteLogin")} disabled={!state || blank} onClick={() => void act({ action: "configure_login" })}><AliIcon name="lock" size={14} /></button>
-      {bridge.tools && !barNodes.length && <button type="button" disabled={importing} aria-label={t("browser.refreshBookmarks")} title={t("browser.refreshBookmarks")} onClick={() => void importChromeBookmarks()}><AliIcon name="bookmark" size={15} /></button>}
+      {!showHome && <button type="button" aria-label={t("browser.reload")} disabled={!state} onClick={() => void act({ action: "reload" })}><AliIcon name="reload" size={14} /></button>}
+      </div>}
+      {ready && !showHome && <BrowserAddress key={state?.activeTabId ?? "starting"} value={address} change={setAddress} inputRef={addressRef} label={t("browser.address")}
+        placeholder={t("browser.searchOrAddressPlaceholder")} invoke={bridge.tools} slot={toolSlot} navigate={url => void act({action:"navigate", url})} />}
+      {!showHome && <button type="button" aria-label={t("browser.siteLogin")} title={t("browser.siteLogin")} disabled={!state || blank} onClick={() => void act({ action: "configure_login" })}><AliIcon name="lock" size={14} /></button>}
+      {bridge.tools && !barNodes.length && !(showHome && showOnboarding) && <button type="button" disabled={importing} aria-label={t("browser.refreshBookmarks")} title={t("browser.refreshBookmarks")} onClick={() => void importChromeBookmarks()}><AliIcon name="bookmark" size={15} /></button>}
       {state && bridge.tools && <BrowserControls key={[state.sessionId, state.activeTabId, state.navigationEpoch].join("/")} bridge={bridge as ToolsBridge} navigationEpoch={state.navigationEpoch ?? 0}
         sessionId={state.sessionId} tabId={state.activeTabId} active={active} slot={toolSlot} viewport={viewportRef.current}
         suspend={setDeviceDragging} report={setError} />}
@@ -623,24 +637,25 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     {error ? <div className={styles.browserError} role="alert">{error}</div> : null}
     <div ref={setToolSlot} style={{ flex: "0 1 auto", minHeight: 0, maxHeight: "55%", overflow: "auto" }} />
     <div ref={viewportRef} className={styles.browserViewport} data-browser-viewport="" data-busy={state?.loading ? "true" : undefined}>
-      {blank ? <div className={styles.browserStart} data-onboarding={showOnboarding ? "true" : undefined}>
-        <AliIcon name="earth" size={28} />
-        <strong>{showOnboarding ? t("browser.welcomeTitle") : t("browser.startTitle")}</strong>
-        <span>{showOnboarding ? t("browser.welcomeDescription") : t("browser.startDescription")}</span>
-        {showOnboarding ? <div className={styles.browserOnboardingActions}>
-          <button type="button" disabled={importing} onClick={() => void importChromeBookmarks()}>{importing ? t("browser.importing") : t("browser.importChrome")}</button>
-          <button type="button" onClick={finishOnboarding}>{t("browser.skipImport")}</button>
-          <small>{t("browser.importSafety")}</small>
-        </div> : <>
-          <button className={styles.browserImportLink} type="button" disabled={importing} onClick={() => void importChromeBookmarks()}>{t("browser.importChrome")}</button>
-        </>}
-      </div> : null}
+      {!ready && !error && <div className={styles.browserLoading} role="status">{t("browser.starting")}</div>}
+      {showHome && <BrowserHome
+        key={state?.activeTabId ?? "empty"}
+        active={active}
+        address={address}
+        changeAddress={setAddress}
+        addressRef={addressRef}
+        navigate={url => void act({ action: "navigate", url })}
+        history={bridge.tools}
+        workspace={workspace}
+        onHistory={bridge.tools ? () => openBrowserSettings("history") : undefined}
+        bookmarks={showOnboarding ? { importing, onImport: () => void importChromeBookmarks(), onDismiss: finishOnboarding } : undefined}
+      />}
     </div>
-    <div className={styles.browserPrivacy}>
+    {(!showHome || download) && <div className={styles.browserPrivacy}>
       {download ? <button type="button" onClick={() => download.path && window.piDesktop?.revealPath?.(download.path)}>
         {downloadLabel}
       </button> : t("browser.profileNotice")}
-    </div>
+    </div>}
   </div>;
 }
 

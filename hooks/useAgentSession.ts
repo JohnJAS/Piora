@@ -34,6 +34,7 @@ import { useChatCommandOperations } from "@/hooks/useChatCommandOperations";
 import { createChatCommandCatalog, persistentChatInputOptions } from "@/lib/chat-command-input";
 import type { ChatCommandCatalog, ChatCommandView, ChatInputOptions } from "@/lib/chat-command-types";
 import type { WorkflowAction, WorkflowPromptOptions, WorkflowSnapshot } from "@/lib/workflow-types";
+import { extractAppendedCustomMessage } from "@/lib/workflow/goal-continuation";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage, mergeContextUsageWithEstimate } from "@/lib/context-usage";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
@@ -1797,6 +1798,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "workflow_update":
         if (event.snapshot) setLiveWorkflowSnapshot(event.snapshot as WorkflowSnapshot);
         break;
+      case "entry_appended": {
+        if (!agentRunningRef.current) break;
+        const appended = extractAppendedCustomMessage(event.entry);
+        if (appended) setMessages((prev) => [...prev, appended]);
+        break;
+      }
     }
   }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;

@@ -43,6 +43,27 @@
   border-radius: var(--radius-control); background: var(--bg); color: var(--text); padding: 6px 10px; font: inherit;
 }
 .addressHost { position: absolute; inset-inline: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; text-align: center; color: var(--text); font-size: var(--text-sm); }
+.homeAddress {
+  display: flex; align-items: center; min-width: 0; min-height: 48px; gap: 10px;
+  padding: 0 8px 0 12px; border: 1px solid var(--border); border-radius: 12px;
+  color: var(--text-muted); background: var(--bg);
+}
+.homeAddress:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent); }
+.homeAddress > svg { flex: none; }
+.homeAddress input {
+  flex: 1; min-width: 0; padding: 8px 0; border: 0; outline: 0;
+  color: var(--text); background: transparent; font: inherit; font-size: var(--text-base);
+}
+.homeAddress input::placeholder { color: var(--text-muted); text-overflow: ellipsis; }
+.homeAddress > button {
+  display: grid; place-items: center; flex: none; width: 31px; height: 30px; padding: 0;
+  border: 0; border-radius: var(--radius-control); color: var(--btn-primary-fg); background: var(--btn-primary-bg); cursor: pointer;
+}
+.homeAddress > button:hover:enabled { background: var(--btn-primary-bg-hover); }
+.homeAddress > button:disabled { color: var(--text-muted); background: var(--bg-hover); cursor: default; }
+.homeSuggestions.suggestions {
+  max-height: min(240px, 45vh); padding: 4px; border: 1px solid var(--border-soft); border-radius: 12px;
+}
 .chromeMark { display: block; width: 16px; height: 16px; border-radius: 50%; background: conic-gradient(from -25deg,#ea4335 0 33.3%,#fbbc04 33.3% 66.6%,#34a853 66.6% 100%); }
 .chromeMark::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: #4285f4; border: 1px solid white; }
 .options, .previewBox, .settingsRows, .navList {

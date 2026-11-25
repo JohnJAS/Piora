@@ -18,6 +18,7 @@ import solarizedDarkAtom from "react-syntax-highlighter/dist/esm/styles/prism/so
 import solarizedlight from "react-syntax-highlighter/dist/esm/styles/prism/solarizedlight";
 import synthwave84 from "react-syntax-highlighter/dist/esm/styles/prism/synthwave84";
 import { useTheme, type Theme } from "@/hooks/useTheme";
+import { FLAGSHIP_THEMES, type FlagshipThemeId } from "@/lib/appearance/flagship-themes";
 import { CHARACTER_THEMES, type CharacterThemeId } from "@/lib/character-themes";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
@@ -38,6 +39,7 @@ const DARK_CODE_THEME = codeThemeWithoutBackground(vscDarkPlus);
 
 const THEME_CODE_LIGHT: Record<Theme, Record<string, CSSProperties>> = {
   ...Object.fromEntries(CHARACTER_THEMES.map(({ id }) => [id, LIGHT_CODE_THEME])) as Record<CharacterThemeId, Record<string, CSSProperties>>,
+  ...Object.fromEntries(FLAGSHIP_THEMES.map(({ id }) => [id, LIGHT_CODE_THEME])) as Record<FlagshipThemeId, Record<string, CSSProperties>>,
   light: LIGHT_CODE_THEME,
   starlight: codeThemeWithoutBackground(oneLight),
   ivory: codeThemeWithoutBackground(a11yOneLight),
@@ -62,6 +64,7 @@ const THEME_CODE_LIGHT: Record<Theme, Record<string, CSSProperties>> = {
 
 const THEME_CODE_DARK: Record<Theme, Record<string, CSSProperties>> = {
   ...Object.fromEntries(CHARACTER_THEMES.map(({ id }) => [id, DARK_CODE_THEME])) as Record<CharacterThemeId, Record<string, CSSProperties>>,
+  ...Object.fromEntries(FLAGSHIP_THEMES.map(({ id }) => [id, DARK_CODE_THEME])) as Record<FlagshipThemeId, Record<string, CSSProperties>>,
   light: DARK_CODE_THEME,
   starlight: DARK_CODE_THEME,
   ivory: DARK_CODE_THEME,

@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readLaboratorySettings } from "./laboratory-settings.ts";
 import { buildPlanImplementationPrompt } from "./workflow/plan-prompt.ts";
+import {
+  GOAL_CONTINUATION_PROMPT_ZH,
+  GOAL_RESUME_PROMPT_ZH,
+  PLAN_RESUME_PROMPT_ZH,
+  serializeWorkflowContextSnapshot,
+} from "./workflow/goal-continuation.ts";
 import { readPlanDocument, writePlanDocument } from "./workflow/plan-store.ts";
 import { settleActiveDuration, WorkflowStore, type WorkflowRecord } from "./workflow-store.ts";
 import {
@@ -242,7 +248,7 @@ export class WorkflowRuntime {
           if (run.kind === "goal") run.activeSince = Date.now();
           snapshot.mode = run.kind;
           this.autoContinuing = false;
-          prompt = run.kind === "goal" ? "Continue the existing goal using its preserved objective, criteria, and evidence. Recheck the current workspace before acting." : "Continue preparing the existing plan. Submit a complete revised plan for review; do not implement it.";
+          prompt = run.kind === "goal" ? GOAL_RESUME_PROMPT_ZH : PLAN_RESUME_PROMPT_ZH;
           break;
         case "set_budget":
           if (run.kind !== "goal" || input.turnBudget === undefined) throw new WorkflowError("A goal turn budget is required", "INVALID_WORKFLOW", 400);
@@ -320,7 +326,8 @@ export class WorkflowRuntime {
     }
     if (run.kind === "goal" && snapshot.mode === "goal") {
       const stepsNote = snapshot.todoSteps?.length ? `\nCurrent step checklist (carry forward and keep updated via piora_update_steps):\n${JSON.stringify(snapshot.todoSteps)}` : "";
-      return `You are in Goal mode. Pursue this original objective without narrowing or replacing it:\n${run.objective}\nBudget: ${run.turnsUsed}/${run.turnBudget} turns used. The host continues unfinished work after a turn ends. Use piora_update_steps to keep a concise live step checklist visible to the user, and use piora_update_goal to record checkable criteria and concrete observed evidence. Criteria are locked after first declaration. Mark completed only when every criterion is verified with actual current evidence; evidence remains your report, not automatic proof. If you need user input or cannot proceed, set waiting with a reason. Never mark completion to stop.${stepsNote}\nCurrent goal state:\n${JSON.stringify(run)}`;
+      const stateBlock = serializeWorkflowContextSnapshot(run, snapshot.todoSteps);
+      return `You are in Goal mode. Pursue this original objective without narrowing or replacing it:\n${run.objective}\nBudget: ${run.turnsUsed}/${run.turnBudget} turns used.\nExecution rules:\n- Keep working within the same turn by calling tools continuously until a meaningful milestone is completed, user input is needed (piora_update_goal with status="waiting"), or every criterion is verified (status="completed").\n- Do NOT end your response with only thinking or a brief verbal plan without calling tools; ending without a tool call consumes a turn budget and triggers automatic continuation.\n- Use piora_update_steps to keep a concise live step checklist visible to the user, and use piora_update_goal to record checkable criteria and concrete observed evidence.\n- Criteria are locked after first declaration. Mark completed only when every criterion is verified with actual current evidence; evidence remains your report, not automatic proof. Never mark completion to stop.${stepsNote}\n${stateBlock}`;
     }
     return "";
   }
@@ -399,6 +406,19 @@ export class WorkflowRuntime {
     const hash = createHash("sha256").update(`${name}:${JSON.stringify(result)}`).digest("hex");
     if (!this.toolEvidence.has(hash)) { this.toolEvidence.add(hash); this.progressRevision++; }
   }
+  /** Read-only eligibility check for resuming an incomplete/thinking-only assistant response within the same logical turn. */
+  canContinueIncompleteTurn(): boolean {
+    const snapshot = this.store.read(this.sessionId).snapshot;
+    const run = snapshot.current;
+    if (snapshot.mode !== "goal" || !run || run.kind !== "goal") return false;
+    if (run.status !== "running" || run.id !== this.turnRunId) return false;
+    if (run.turnsUsed >= run.turnBudget) return false;
+    try {
+      return readLaboratorySettings().planGoalEnabled === true;
+    } catch {
+      return false;
+    }
+  }
   /** Returns a continuation only for the still-current running goal, never an old/aborted turn. */
   endTurn(error = false): string | undefined {
     const turnRunId = this.turnRunId;
@@ -436,7 +456,7 @@ export class WorkflowRuntime {
         this.autoContinuing = false;
       } else {
         this.autoContinuing = true;
-        continuation = "Continue the current goal. Preserve its objective and acceptance criteria. Record new progress/evidence with piora_update_goal, keep steps updated with piora_update_steps, or report waiting with a concrete reason; complete only after every criterion is verified.";
+        continuation = GOAL_CONTINUATION_PROMPT_ZH;
       }
     });
     return continuation;

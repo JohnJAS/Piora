@@ -6,6 +6,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import type { CommandExecutionData } from "@/lib/command-execution";
 import type { CompletedGoalBadge } from "@/lib/workflow-types";
+import { WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE } from "@/lib/workflow/goal-continuation";
 import { GoalAchievedBadge } from "./workflow/GoalAchievedBadge";
 import {
   getAssistantErrorMessage,
@@ -195,6 +196,7 @@ const MessageContent = memo(function MessageContent({
     return null;
   }
   if (message.role === "custom") {
+    if ((message as CustomMessage).customType === WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE) return null;
     if ((message as CustomMessage).customType === "compaction") {
       return <div className="message-row"><CompactionMessageView message={message as CustomMessage} /><div className="message-hover-actions">{messageActions}</div></div>;
     }

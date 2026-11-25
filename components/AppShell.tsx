@@ -36,6 +36,7 @@ import { isProjectNotificationMuted } from "@/lib/project-notification-preferenc
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useCompanionWorkRhythm } from "@/hooks/useCompanionWorkRhythm";
+import { useAgentThemeMoodPublisher } from "@/hooks/useAgentThemeMood";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
@@ -472,6 +473,11 @@ export function AppShell() {
     status: "idle",
     cause: "",
   }));
+  useAgentThemeMoodPublisher({
+    currentActivity: companionActivity,
+    runningTasks: runningTaskSnapshots,
+    activeSessionId: selectedSession?.id ?? null,
+  });
   const topBarRef = useRef<HTMLDivElement>(null);
   const projectBtnRef = useRef<HTMLButtonElement>(null);
   const taskControlsBtnRef = useRef<HTMLButtonElement>(null);

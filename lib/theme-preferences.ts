@@ -1,8 +1,10 @@
 import type { UiThemePackId } from "./ui-theme-packs.ts";
 
 import { CHARACTER_THEMES, type CharacterThemeId } from "./character-themes.ts";
+import { FLAGSHIP_THEMES, type FlagshipThemeId } from "./appearance/flagship-themes.ts";
 
 export type Theme =
+  | FlagshipThemeId
   | CharacterThemeId
   | "light"
   | "dark"
@@ -57,6 +59,7 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: "ember", isDark: true, preview: { background: "#1b1110", accent: "#ff9a62" } },
   { id: "dream", isDark: true, packId: "codex-dream-skin", preview: { background: "#111318", accent: "#8da397" } },
   ...CHARACTER_THEMES.map(({ id, isDark, colors }) => ({ id, isDark, preview: { background: colors.bg, accent: colors.accent } })),
+  ...FLAGSHIP_THEMES.map(({ id, isDark, colors }) => ({ id, isDark, preview: { background: colors.bg, accent: colors.accent } })),
 ] as const;
 
 export const THEME_STORAGE_KEY = "pi-theme:v1";

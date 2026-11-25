@@ -3,13 +3,15 @@ import { countToolCallBlocks, hasAssistantNotice, getDisplayableAssistantBlocks,
 import { isCommandToolName } from "./command-execution";
 import type { ChatCommandView } from "./chat-command-types";
 import { isSubagentTool } from "./subagent-types";
+import { WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE } from "./workflow/goal-continuation";
 
 export function startsChatTurn(message: AgentMessage): boolean {
   return message.role === "user" || message.followsDeletedPrompt === true;
 }
 
 export function isChatTurnAnchor(message: AgentMessage): boolean {
-  return startsChatTurn(message) || message.role === "custom" && message.customType === "compaction";
+  return startsChatTurn(message)
+    || (message.role === "custom" && (message.customType === "compaction" || message.customType === WORKFLOW_GOAL_CONTINUE_CUSTOM_TYPE));
 }
 
 export interface ChatHistoryRow {

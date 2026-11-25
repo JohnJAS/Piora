@@ -6,6 +6,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { isTheme, useTheme, type Theme } from "@/hooks/useTheme";
 import { getBackgroundPreset, GLACIER_MOTION_BACKGROUND_ID, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
 import { CharacterThemeLooks } from "./CharacterThemeLooks";
+import { FlagshipThemeLooks } from "./FlagshipThemeLooks";
 import { AliIcon } from "./AliIcon";
 
 interface AppearanceLook {
@@ -440,6 +441,7 @@ export function AppearanceLooks() {
 
   return (
     <section aria-labelledby={titleId} style={{ paddingBottom: 16 }}>
+      <FlagshipThemeLooks />
       <CharacterThemeLooks />
       <div style={{ marginBottom: 9 }}>
         <h3 id={titleId} style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>

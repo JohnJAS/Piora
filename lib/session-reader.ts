@@ -18,6 +18,7 @@ import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview }
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
 import { SIDE_BOUNDARY_CUSTOM_TYPE } from "./side-chat/policy";
+import { WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE } from "./workflow/goal-continuation";
 import { resolveSideChatPath } from "./side-chat/store";
 import { isSubagentTool, projectSubagentMessageDetails } from "./subagent-types";
 
@@ -452,7 +453,7 @@ export function entryToUiMessage(
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     case "custom_message":
-      if (entry.customType === SIDE_BOUNDARY_CUSTOM_TYPE) return null;
+      if (entry.customType === SIDE_BOUNDARY_CUSTOM_TYPE || entry.customType === WORKFLOW_INCOMPLETE_RESUME_CUSTOM_TYPE) return null;
       return {
         role: "custom",
         customType: entry.customType,

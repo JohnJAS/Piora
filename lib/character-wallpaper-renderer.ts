@@ -61,7 +61,11 @@ const FRAGMENT_SOURCE = `
   uniform vec4 u_eyeB;
   uniform vec4 u_eyeHeights;
   uniform float u_blink;
+  uniform float u_squint;
   uniform vec2 u_gaze;
+  uniform vec4 u_beacon;
+  uniform vec4 u_moodColor;
+  uniform vec4 u_moodFx;
   uniform sampler2D u_atlas;
   uniform vec2 u_atlasSize;
   uniform vec4 u_rect[3]; // source-space bounds, packed horizontally in the atlas
@@ -133,7 +137,8 @@ const FRAGMENT_SOURCE = `
       * smoothstep(0.03, 0.18, horizontal) * (1.0 - smoothstep(0.82, 0.97, horizontal));
     vec2 shift = along * (width * 0.085 * u_gaze.x) + down * (heights.y * 0.22 * u_gaze.y);
     color = mix(color, artworkAt(point - shift), sclera);
-    if (u_blink <= 0.0) return color;
+    float lidClose = u_squint > 0.001 ? max(u_blink, u_squint) : u_blink;
+    if (lidClose <= 0.0) return color;
 
     vec2 center = (corners.xy + corners.zw) * 0.5;
     vec3 cheek = artworkAt(center + down * (heights.y + 8.0));
@@ -150,35 +155,104 @@ const FRAGMENT_SOURCE = `
     skin = mix(skin, color, (1.0 - smoothstep(0.045, 0.16, distance(skin, color))) * 0.8);
 
     float closed = mix(upper, lower, 0.62);
-    float lidTop = mix(upper, closed - 0.4 * arc, u_blink);
-    float lidBottom = mix(lower, closed + 0.4 * arc, u_blink);
+    float lidTop = mix(upper, closed - 0.4 * arc, lidClose);
+    float lidBottom = mix(lower, closed + 0.4 * arc, lidClose);
     float aperture = smoothstep(lidTop - 0.7, lidTop + 0.5, vertical)
       * (1.0 - smoothstep(lidBottom - 0.5, lidBottom + 0.7, vertical))
-      * (1.0 - smoothstep(0.83, 1.0, u_blink));
+      * (1.0 - smoothstep(0.83, 1.0, lidClose));
     float crease = 1.0 - smoothstep(0.0, 4.0 + 0.05 * width, abs(vertical - lidTop + 3.2 * arc));
-    vec3 lid = mix(skin * (1.0 - 0.075 * arc * crease * u_blink), color, aperture);
+    vec3 lid = mix(skin * (1.0 - 0.075 * arc * crease * lidClose), color, aperture);
 
     vec3 lash = artworkAt(center - down * (heights.x - 3.0));
     vec3 ink = mix(skin * 0.38, lash, 0.32);
     float stroke = arc * clamp(width * 0.028, 1.15, 2.25);
     float line = 1.0 - smoothstep(stroke * 0.45, stroke + 0.8, abs(vertical - lidTop));
-    lid = mix(lid, ink, line * smoothstep(0.08, 0.8, u_blink));
+    lid = mix(lid, ink, line * smoothstep(0.08, 0.8, lidClose));
     float feather = smoothstep(0.0, 0.075, horizontal) * (1.0 - smoothstep(0.925, 1.0, horizontal))
       * smoothstep(upper - 4.5, upper + 0.5, vertical)
       * (1.0 - smoothstep(lower - 0.5, lower + 5.0, vertical));
-    return mix(color, lid, feather * smoothstep(0.0, 0.28, u_blink));
+    return mix(color, lid, feather * smoothstep(0.0, 0.28, lidClose));
+  }
+
+  vec3 applyMoodAura(vec3 color, vec2 posed) {
+    // Keep the left reading area (x < 0.47 * width) strictly untouched for chat legibility.
+    float auraRegion = smoothstep(u_imageSize.x * 0.47, u_imageSize.x * 0.60, posed.x);
+    if (auraRegion <= 0.0001) return color;
+
+    vec3 tint = u_moodColor.rgb;
+    float strength = u_moodColor.a;
+    float time = u_moodFx.x;
+    float ripple = u_moodFx.y;
+    float particleEnergy = u_moodFx.z;
+    float ringCount = u_moodFx.w;
+
+    float d = length(posed - u_beacon.xy);
+    float rCore = max(1.0, u_beacon.z);
+    float rHalo = max(1.0, u_beacon.w);
+
+    float breathe = 0.85 + 0.15 * sin(time);
+    float coreRatio = d / rCore;
+    float haloRatio = d / rHalo;
+    float coreGlow = exp(-coreRatio * coreRatio * 1.45);
+    float haloGlow = exp(-haloRatio * haloRatio * 1.35) * 0.34;
+    float aura = (coreGlow + haloGlow) * strength * breathe;
+
+    if (ringCount >= 0.5) {
+      float ring1Phase = fract(time * 0.14);
+      float ring1Radius = mix(rCore * 0.95, rCore * 1.65, ring1Phase);
+      float band1 = (d - ring1Radius) / max(3.0, rCore * 0.11);
+      aura += exp(-band1 * band1) * sin(ring1Phase * 3.14159265) * strength * 0.42;
+    }
+    if (ringCount >= 1.5) {
+      float ring2Phase = fract(time * 0.14 + 0.5);
+      float ring2Radius = mix(rCore * 1.05, rCore * 1.95, ring2Phase);
+      float band2 = (d - ring2Radius) / max(3.0, rCore * 0.12);
+      aura += exp(-band2 * band2) * sin(ring2Phase * 3.14159265) * strength * 0.34;
+    }
+
+    if (ripple > 0.001 && ripple < 0.999) {
+      float rippleRadius = mix(rCore * 0.55, rHalo * 1.15, ripple);
+      float rippleBand = (d - rippleRadius) / max(5.0, rCore * 0.22);
+      aura += exp(-rippleBand * rippleBand) * sin(ripple * 3.14159265) * max(0.35, strength) * 0.58;
+    }
+
+    float rightMask = smoothstep(u_imageSize.x * 0.54, u_imageSize.x * 0.70, posed.x);
+    float moteGlow = 0.0;
+    if (particleEnergy > 0.001 && rightMask > 0.001) {
+      for (int i = 0; i < 12; i++) {
+        float fi = float(i);
+        float seedA = fract(sin(fi * 12.9898 + 1.23) * 43758.5453);
+        float seedB = fract(sin(fi * 78.233 + 4.56) * 29431.1234);
+        float mx = u_imageSize.x * (0.58 + 0.39 * seedA) + sin(time * (0.45 + 0.25 * seedB) + fi) * 22.0;
+        float speed = 0.035 + 0.03 * seedB;
+        float phase = fract(seedB + time * speed * (0.55 + particleEnergy));
+        float my = u_imageSize.y * (1.05 - 1.10 * phase);
+        float ratio = length(posed - vec2(mx, my)) / mix(5.0, 12.0, seedA);
+        moteGlow += exp(-ratio * ratio * 1.8) * sin(phase * 3.14159265) * (0.45 + 0.55 * seedA);
+      }
+      moteGlow *= particleEnergy * rightMask * 0.26;
+    }
+
+    float amount = clamp((aura * auraRegion) + moteGlow, 0.0, 1.0);
+    float luma = dot(color, vec3(0.299, 0.587, 0.114));
+    vec3 luminous = clamp(color + tint * amount * (1.0 - color * 0.55), 0.0, 1.0);
+    vec3 glazed = mix(color, tint, clamp(amount * 0.52, 0.0, 0.52));
+    return mix(luminous, glazed, smoothstep(0.68, 0.96, luma));
   }
 
   void main() {
     vec2 point = v_artwork;
     vec3 color = artworkAt(point);
-    if (u_blink > 0.0 || dot(u_gaze, u_gaze) > 0.00001) {
+    if (u_blink > 0.0 || u_squint > 0.001 || dot(u_gaze, u_gaze) > 0.00001) {
       color = blinkEye(color, point, u_eyeA, u_eyeHeights.xy);
       color = blinkEye(color, point, u_eyeB, u_eyeHeights.zw);
     }
     color = layerAt(color, point, u_rect[0], u_hinge[0], u_angles.x, 0.0, u_elbowOffset, u_tether[0]);
     color = layerAt(color, point, u_rect[1], u_hinge[1], u_angles.y, u_rect[0].z, vec2(0.0), u_tether[1]);
     color = layerAt(color, point, u_rect[2], u_hinge[2], u_angles.z, u_rect[0].z + u_rect[1].z, vec2(0.0), u_tether[2]);
+    if (u_moodColor.a > 0.001 || u_moodFx.z > 0.001) {
+      color = applyMoodAura(color, v_posed);
+    }
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -219,6 +293,17 @@ function createProgram(gl: WebGLRenderingContext): WebGLProgram | null {
   if (program && gl.getProgramParameter(program, gl.LINK_STATUS)) return program;
   gl.deleteProgram(program);
   return null;
+}
+
+export interface CharacterWallpaperMoodFrame {
+  beacon: readonly [x: number, y: number, radius: number, haloRadius: number];
+  color: readonly [r: number, g: number, b: number, strength: number];
+  time: number;
+  ripple: number;
+  particleEnergy: number;
+  ringCount: number;
+  squint: number;
+  tempoScale: number;
 }
 
 export function createCharacterWallpaperRenderer(
@@ -343,6 +428,10 @@ export function createCharacterWallpaperRenderer(
   const sway = uniform("u_sway");
   const turn = uniform("u_turn");
   const eyelids = uniform("u_blink");
+  const squintUniform = uniform("u_squint");
+  const beaconUniform = uniform("u_beacon");
+  const moodColorUniform = uniform("u_moodColor");
+  const moodFxUniform = uniform("u_moodFx");
   gl.uniform1i(uniform("u_artwork"), 0);
   gl.uniform2f(uniform("u_imageSize"), width, height);
   const pivot = rig.headContact ?? [rig.head[0], rig.head[1] + rig.head[3] * 0.72];
@@ -378,7 +467,13 @@ export function createCharacterWallpaperRenderer(
       gl.uniform2f(coverSize, visibleWidth, cssHeight / coverScale);
       gl.uniform2f(viewCenter, visibleWidth / 2 + (width - visibleWidth) * (view?.focusX ?? 0.5), height / 2);
     },
-    draw(seconds: number, look?: { x: number; y: number; attention: number }, sinceGreeting = Infinity, amount = 1) {
+    draw(
+      seconds: number,
+      look?: { x: number; y: number; attention: number },
+      sinceGreeting = Infinity,
+      amount = 1,
+      mood?: CharacterWallpaperMoodFrame,
+    ) {
       if (gl.isContextLost()) return false;
       const breathPhase = seconds * TAU / (4.8 + offset);
       const headPhase = seconds * TAU / (9.2 + offset);
@@ -438,6 +533,17 @@ export function createCharacterWallpaperRenderer(
         blink(cycle - 1.45 - offset), blink(cycle - 6.45 + offset),
         blink(cycle - 12.9 - offset), blink(cycle - 16.8 - offset),
       ));
+      if (mood) {
+        gl.uniform1f(squintUniform, mood.squint * amount);
+        gl.uniform4f(beaconUniform, mood.beacon[0], mood.beacon[1], mood.beacon[2], mood.beacon[3]);
+        gl.uniform4f(moodColorUniform, mood.color[0], mood.color[1], mood.color[2], mood.color[3] * amount);
+        gl.uniform4f(moodFxUniform, mood.time, mood.ripple, mood.particleEnergy * amount, mood.ringCount);
+      } else {
+        gl.uniform1f(squintUniform, 0);
+        gl.uniform4f(beaconUniform, 0, 0, 1, 1);
+        gl.uniform4f(moodColorUniform, 0, 0, 0, 0);
+        gl.uniform4f(moodFxUniform, 0, 0, 0, 0);
+      }
       gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
       return true;
     },

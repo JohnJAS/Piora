@@ -5,6 +5,7 @@ import { runDesktopScenario } from './desktop-e2e/harness.mjs';
 import { stopShell, stopBash } from './desktop-e2e/scenarios/stop-shell.mjs';
 import { settingsTheme } from './desktop-e2e/scenarios/settings-theme.mjs';
 import { browserPersistence } from './desktop-e2e/scenarios/browser-persistence.mjs';
+import { browserHome } from './desktop-e2e/scenarios/browser-home.mjs';
 import { browserMenu, browserMenuNative, browserMenuAppearance } from './desktop-e2e/scenarios/browser-menu.mjs';
 import { browserLogin } from './desktop-e2e/scenarios/browser-login.mjs';
 import { browserUpload } from './desktop-e2e/scenarios/browser-upload.mjs';
@@ -22,7 +23,7 @@ import { chatHistoryFull } from './desktop-e2e/scenarios/chat-history-full.mjs';
 import { workspaceIssueFixes } from './desktop-e2e/scenarios/workspace-issue-fixes.mjs';
 import { worktreeChatLayout } from './desktop-e2e/scenarios/worktree-chat-layout.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserMenu, browserMenuNative, browserMenuAppearance, browserLogin, browserUpload, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryFull, workspaceIssueFixes, worktreeChatLayout];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserHome, browserPersistence, browserMenu, browserMenuNative, browserMenuAppearance, browserLogin, browserUpload, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryFull, workspaceIssueFixes, worktreeChatLayout];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };

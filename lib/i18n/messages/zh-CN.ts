@@ -2,6 +2,7 @@ import { memesZh } from "./memes";
 import { workflowsZh } from "./workflows";
 import { subagentsZh } from "./subagents";
 import { characterThemesZh } from "./character-themes";
+import { flagshipThemesZh } from "./flagship-themes";
 import { desktopExtensionsZh } from "./desktop-extensions";
 import { brandText } from "../../branding";
 import { roomUxZh } from "./room-ux";
@@ -24,6 +25,7 @@ export const zhCNLocale: LocalePlugin = {
     ...workflowsZh,
     ...subagentsZh,
     ...characterThemesZh,
+    ...flagshipThemesZh,
     ...desktopExtensionsZh,
     ...memesZh,
     "permission.settings.title": "权限控制",
@@ -1477,6 +1479,13 @@ export const zhCNLocale: LocalePlugin = {
     "browser.reload": "重新加载",
     "browser.address": "地址",
     "browser.addressPlaceholder": "输入 URL",
+    "browser.searchOrAddressPlaceholder": "搜索网页或输入网址",
+    "browser.homeFilePlaceholder": "搜索项目文件或输入网址",
+    "browser.homeSearch": "浏览器主页搜索",
+    "browser.homeSubmit": "打开网址或搜索网页",
+    "browser.homeShortcuts": "浏览器主页快捷入口",
+    "browser.homeFiles": "项目文件",
+    "browser.homeHistory": "浏览记录",
     "browser.startTitle": "开始浏览",
     "browser.startDescription": "输入 URL 以打开页面",
     "browser.pagePreview": "可交互浏览器页面",
@@ -1486,8 +1495,6 @@ export const zhCNLocale: LocalePlugin = {
     "browser.starting": "正在启动内置浏览器…",
     "browser.unavailable": "内置浏览器不可用",
     "browser.actionFailed": "浏览器操作失败",
-    "browser.welcomeTitle": brandText("欢迎使用 Piora 浏览器"),
-    "browser.welcomeDescription": "真实网页会直接显示在右侧面板中，登录状态保存在独立的本机配置里。",
     "browser.importChrome": "导入 Chrome 书签栏",
     "browser.siteLogin": "网站登录设置",
     "browser.skipImport": "暂不导入",

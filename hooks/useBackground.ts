@@ -356,6 +356,14 @@ export function useBackground() {
     commitPreference({ ...snapshot.preference, live2dEnabled });
   }, [snapshot.preference]);
 
+  const setAgentReactiveEnabled = useCallback((agentReactiveEnabled: boolean) => {
+    commitPreference({ ...snapshot.preference, agentReactiveEnabled });
+  }, [snapshot.preference]);
+
+  const setPerformanceEnabled = useCallback((performanceEnabled: boolean) => {
+    commitPreference({ ...snapshot.preference, performanceEnabled });
+  }, [snapshot.preference]);
+
   const reset = useCallback(async () => {
     operationRevision += 1;
     storedCustom = null;
@@ -384,6 +392,8 @@ export function useBackground() {
     setBlur,
     setMotionEnabled,
     setLive2dEnabled,
+    setAgentReactiveEnabled,
+    setPerformanceEnabled,
     reset,
   };
 }

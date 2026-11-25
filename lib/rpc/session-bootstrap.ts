@@ -48,6 +48,7 @@ import { persistLazySessionManager } from "../session-persistence";
 import { cacheSessionPath } from "../session-reader";
 import {
   appendSessionSystemPromptBinding,
+  buildSessionAppendSystemPrompt,
   createSessionSystemPromptBinding,
   readLatestSessionSystemPromptBinding,
   resolveSessionSystemPrompt,
@@ -229,9 +230,14 @@ export async function startRpcSession(
                   sessionManager.getEntries(),
                   base,
                   readSystemPromptConfig(),
-                ) + `\n\n<file_references>\n${FILE_REFERENCE_INSTRUCTIONS}\n</file_references>`
-                  + (options.subagentSystemPrompt ? `\n\n<subagent_role>\n${options.subagentSystemPrompt}\n</subagent_role>` : "")
-                  + (sideChatMeta ? `\n\n${buildSideSystemInstructions(sideChatMeta.storage, sideChatMeta.parentSessionId)}` : ""),
+                ),
+                appendSystemPromptOverride: (baseAppend) => buildSessionAppendSystemPrompt(baseAppend, {
+                  fileReferenceInstructions: FILE_REFERENCE_INSTRUCTIONS,
+                  subagentSystemPrompt: options.subagentSystemPrompt,
+                  sideChatInstructions: sideChatMeta
+                    ? buildSideSystemInstructions(sideChatMeta.storage, sideChatMeta.parentSessionId)
+                    : undefined,
+                }),
               },
             }),
       });

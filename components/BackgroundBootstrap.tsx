@@ -2,9 +2,11 @@
 
 import { useBackground } from "@/hooks/useBackground";
 import { useInterfaceTransparency } from "@/hooks/useInterfaceTransparency";
+import { getFlagshipTheme } from "@/lib/appearance/flagship-themes";
 import { getBackgroundMotionKind, getBackgroundPreset } from "@/lib/backgrounds";
 import { BackgroundMotion } from "./BackgroundMotion";
 import { CharacterBackgroundMotion } from "./CharacterBackgroundMotion";
+import { FlagshipBackgroundMotion } from "./FlagshipBackgroundMotion";
 
 /** Mount once near the application root so saved backgrounds apply at startup. */
 export function BackgroundBootstrap() {
@@ -13,6 +15,17 @@ export function BackgroundBootstrap() {
   if (preference.source !== "builtin" || preference.motionEnabled === false) return null;
   const kind = getBackgroundMotionKind(preference.presetId);
   if (kind === "glacier") return <BackgroundMotion />;
+  if (kind === "flagship") {
+    const flagship = getFlagshipTheme(preference.presetId);
+    return flagship ? (
+      <FlagshipBackgroundMotion
+        key={flagship.id}
+        flagship={flagship}
+        agentReactiveEnabled={preference.agentReactiveEnabled !== false}
+        performanceEnabled={preference.performanceEnabled !== false}
+      />
+    ) : null;
+  }
   const character = kind === "character" ? getBackgroundPreset(preference.presetId) : undefined;
   return character ? (
     <CharacterBackgroundMotion key={character.id} preset={character} live2dEnabled={preference.live2dEnabled === true} />

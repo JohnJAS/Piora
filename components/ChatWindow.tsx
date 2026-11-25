@@ -153,7 +153,7 @@ const CHAT_SCROLL_RAIL_WIDTH = 14;
 const CHAT_SCROLL_RAIL_GAP = 10;
 const CHAT_COLUMN_RIGHT_PADDING = CHAT_SCROLL_RAIL_WIDTH + CHAT_SCROLL_RAIL_GAP;
 const CHAT_INPUT_RIGHT_PADDING = CHAT_MINIMAP_WIDTH + CHAT_COLUMN_RIGHT_PADDING;
-const CHAT_COLUMN_DEFAULT_WIDTH = 820;
+const CHAT_COLUMN_DEFAULT_WIDTH = 780;
 const CHAT_COLUMN_MIN_WIDTH = 560;
 const CHAT_COLUMN_MAX_WIDTH = 1400;
 const SCROLL_TO_BOTTOM_THRESHOLD = 96;
@@ -191,7 +191,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   }, []);
   const getResponsiveChatColumnWidth = useCallback(() => {
     const viewportWidth = typeof window === "undefined" ? CHAT_COLUMN_MAX_WIDTH : window.innerWidth;
-    const fluidWidth = Math.min(1180, Math.max(CHAT_COLUMN_DEFAULT_WIDTH, viewportWidth * 0.72));
+    const fluidWidth = Math.min(920, Math.max(CHAT_COLUMN_DEFAULT_WIDTH, viewportWidth * 0.64));
     return Math.min(getChatColumnMaxWidth(), fluidWidth);
   }, [getChatColumnMaxWidth]);
   const getRenderedChatColumnWidth = useCallback(() => (

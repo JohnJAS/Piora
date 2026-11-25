@@ -1,0 +1,91 @@
+/* Piora Flagship Dynamic Themes (Whale-girl Day & Night dual edition). */
+
+html[data-theme="piora-whale-day"] {
+  color-scheme: light;
+  --bg: #EFF9FF;
+  --bg-panel: #FFFFFF;
+  --bg-hover: #E5F3FC;
+  --bg-selected: #D5EAF9;
+  --border: #C4D7E8;
+  --border-strong: #9FB9D1;
+  --text: #1B334B;
+  --text-muted: #475E75;
+  --text-dim: #556C82;
+  --accent: #1E64A8;
+  --accent-hover: #18538C;
+  --accent-subtle: #E3F0FB;
+  --btn-primary-bg: #1E64A8;
+  --btn-primary-fg: #FFFFFF;
+  --btn-primary-bg-hover: #18538C;
+  --user-bg: #E3F0FB;
+  --assistant-bg: transparent;
+  --tool-bg: #FFFFFF;
+  --bg-subtle: #F2FAFF;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  --ambient-primary: transparent;
+  --ambient-secondary: transparent;
+  --radius-control: 10px;
+  --radius-surface: 14px;
+  --radius-panel: 18px;
+}
+
+html[data-theme="piora-whale-night"] {
+  color-scheme: dark;
+  --bg: #081728;
+  --bg-panel: #10243B;
+  --bg-hover: #163250;
+  --bg-selected: #1E4266;
+  --border: #2B4561;
+  --border-strong: #4A6888;
+  --text: #E6F4FF;
+  --text-muted: #B7CBE0;
+  --text-dim: #9BB3CC;
+  --accent: #5ED0E6;
+  --accent-hover: #76D9EC;
+  --accent-subtle: #143652;
+  --btn-primary-bg: #5ED0E6;
+  --btn-primary-fg: #081728;
+  --btn-primary-bg-hover: #76D9EC;
+  --user-bg: #143652;
+  --assistant-bg: transparent;
+  --tool-bg: #10243B;
+  --bg-subtle: #0F2740;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  --ambient-primary: transparent;
+  --ambient-secondary: transparent;
+  --radius-control: 10px;
+  --radius-surface: 14px;
+  --radius-panel: 18px;
+}
+
+/* Keep the Whale-girl portrait aligned in narrow windows without intercepting input. */
+html[data-app-background-preset^="piora-whale-"] body::before,
+html[data-app-background-preset^="piora-whale-"] .settings-backdrop::before {
+  background-position: 80% center;
+}
+
+/* Subtle, restrained Agent mood skin cues scoped exclusively to active flagship themes. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme^="piora-whale-"][data-agent-theme-mood="waiting"] :is(.chat-composer-surface, .composer-surface),
+  html[data-theme^="piora-whale-"][data-agent-theme-mood="running"] :is(.chat-composer-surface, .composer-surface) {
+    border-color: color-mix(in srgb, var(--status-running) 42%, var(--composer-border)) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-running) 10%, transparent), var(--shadow-composer) !important;
+  }
+
+  html[data-theme^="piora-whale-"][data-agent-theme-mood="review"] :is(.chat-composer-surface, .composer-surface) {
+    border-color: color-mix(in srgb, var(--status-attention) 58%, var(--composer-border)) !important;
+    box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--status-attention) 16%, transparent), var(--shadow-composer) !important;
+  }
+
+  html[data-theme^="piora-whale-"][data-agent-theme-mood="completed"] :is(.chat-composer-surface, .composer-surface) {
+    border-color: color-mix(in srgb, var(--status-ready) 48%, var(--composer-border)) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-ready) 12%, transparent), var(--shadow-composer) !important;
+  }
+
+  html[data-theme^="piora-whale-"][data-agent-theme-mood="failed"] :is(.chat-composer-surface, .composer-surface) {
+    border-color: color-mix(in srgb, var(--status-failed) 48%, var(--composer-border)) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-failed) 12%, transparent), var(--shadow-composer) !important;
+  }
+}

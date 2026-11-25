@@ -48,6 +48,8 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
     setBlur,
     setMotionEnabled,
     setLive2dEnabled,
+    setAgentReactiveEnabled,
+    setPerformanceEnabled,
     reset,
   } = useBackground();
 
@@ -90,8 +92,35 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
             disabled={!hydrated || busy}
             onChange={(event) => setMotionEnabled(event.currentTarget.checked)}
           />
-          {t(motion === "character" ? "background.characterMotion" : "background.motion")}
+          {t(motion === "flagship"
+            ? "background.flagshipMotion"
+            : motion === "character"
+              ? "background.characterMotion"
+              : "background.motion")}
         </label>
+      )}
+
+      {motion === "flagship" && (
+        <>
+          <label className={styles.motionToggle}>
+            <input
+              type="checkbox"
+              checked={preference.agentReactiveEnabled !== false}
+              disabled={!hydrated || busy || preference.motionEnabled === false}
+              onChange={(event) => setAgentReactiveEnabled(event.currentTarget.checked)}
+            />
+            {t("background.agentReactive")}
+          </label>
+          <label className={styles.motionToggle}>
+            <input
+              type="checkbox"
+              checked={preference.performanceEnabled !== false}
+              disabled={!hydrated || busy || preference.motionEnabled === false}
+              onChange={(event) => setPerformanceEnabled(event.currentTarget.checked)}
+            />
+            {t("background.flagshipPerformance")}
+          </label>
+        </>
       )}
 
       {selectedPreset?.id === TIDE_PERFORMANCE_BACKGROUND_ID && (

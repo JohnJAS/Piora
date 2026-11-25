@@ -57,7 +57,7 @@ export async function POST(request: Request, context: Context) {
       if (!previous && !readLaboratorySettings().planGoalEnabled) throw new WorkflowError("Enable Plan and Goal in Settings > Laboratory before continuing.", "WORKFLOW_LABORATORY_DISABLED", 409);
       const receipt = previous ?? await router.dispatchSessionMessage({
         targetSessionId: id, source: "ui", delivery: "next_turn", inputMode: "text", idempotencyKey,
-        content: action.action === "approve" ? "Execute the approved plan." : action.action === "revise" ? action.feedback! : "Resume the current workflow.",
+        content: action.action === "approve" ? "Execute the approved plan." : action.action === "revise" ? action.feedback! : "继续当前工作流。",
         workflowAction: action,
       });
       if (action.action === "revise" && (await router.getCommand(receipt.commandId)).content !== action.feedback) {

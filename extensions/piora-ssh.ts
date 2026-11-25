@@ -125,7 +125,9 @@ export default function pioraSSH(api: ExtensionAPI) {
   }));
   api.on("before_agent_start", (event, ctx) => {
     if (!event.systemPromptOptions.selectedTools?.includes("ssh")) return;
-    const list = inventory(ctx.sessionManager.getSessionId());
+    const taskId = ctx.sessionManager.getSessionId();
+    if (!listSSHSessionSummariesForAgent(taskId).length) return;
+    const list = inventory(taskId);
     return { systemPrompt: event.systemPrompt + "\n\n<current_task_ssh_connections>\n" + list + "\nUse the ssh tool with the exact session ID for remote work. Saved but disconnected hosts are unavailable. Local bash remains local.\n</current_task_ssh_connections>" };
   });
 }
