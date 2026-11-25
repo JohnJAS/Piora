@@ -103,16 +103,17 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     }
     const runtimeCard = page.locator('[data-settings-id="conversation.runtimePrompt"]');
     const fileToolsSwitch = runtimeCard.getByRole('switch', { name: '文件工具引导（易冲突）', exact: true });
-    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'false');
+    await runtimeCard.locator('button[role="switch"][aria-label="文件工具引导（易冲突）"][aria-checked="false"]:not([disabled])').waitFor();
     await fileToolsSwitch.click();
-    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'true');
+    await runtimeCard.locator('button[role="switch"][aria-label="文件工具引导（易冲突）"][aria-checked="true"]:not([disabled])').waitFor();
     assert.equal(runtimePrompt.extensions.fileTools, true);
     await runtimeCard.getByRole('button', { name: '对齐 Pi CLI（全部关闭）', exact: true }).click();
-    assert.equal(await fileToolsSwitch.getAttribute('aria-checked'), 'false');
+    await runtimeCard.locator('button[role="switch"][aria-label="文件工具引导（易冲突）"][aria-checked="false"]:not([disabled])').waitFor();
+    await runtimeCard.locator('button[role="switch"][aria-label="内置浏览器说明"][aria-checked="false"]:not([disabled])').waitFor();
     assert.equal(runtimePrompt.extensions.browser, false);
     await page.reload();
     await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
-    assert.equal(await page.locator('[data-settings-id="conversation.runtimePrompt"]').getByRole('switch', { name: '内置浏览器说明', exact: true }).getAttribute('aria-checked'), 'false');
+    await page.locator('[data-settings-id="conversation.runtimePrompt"] button[role="switch"][aria-label="内置浏览器说明"][aria-checked="false"]:not([disabled])').waitFor();
     const compaction = page.locator('[data-settings-id="models.compaction"]');
     const reserveInput = compaction.getByPlaceholder('随模型计算');
     const saveCompaction = compaction.getByRole('button', { name: '保存', exact: true });
