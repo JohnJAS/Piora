@@ -4,6 +4,7 @@ import { getSubagentRuntime } from "../lib/subagent-runtime.ts";
 import { readSubagentSettings } from "../lib/subagent-settings.ts";
 import { listSubagentProfilesSafe } from "../lib/subagents/profile-manager.ts";
 import { isSubagentProfileDisabled, projectSubagentDetail, type SubagentRecord } from "../lib/subagent-types.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 
 function result(record: SubagentRecord) {
   const text = record.status === "running"
@@ -13,11 +14,27 @@ function result(record: SubagentRecord) {
 }
 export default function subagentExtension(api: ExtensionAPI) {
   api.on("before_agent_start", (event, ctx) => {
-    if (!getSubagentRuntime(ctx.sessionManager.getSessionId())) return;
+    const runtimeActive = Boolean(getSubagentRuntime(ctx.sessionManager.getSessionId()));
     const settings = readSubagentSettings();
-    if (!settings.enabled) return;
-    const profiles = listSubagentProfilesSafe(ctx.cwd).profiles.filter(profile => !isSubagentProfileDisabled(settings, profile));
-    return { systemPrompt: `${event.systemPrompt}\n\n<available_subagents>\n${profiles.map(profile => `${profile.name}: ${profile.description}`).join("\n")}\nUse Agent for independent multi-step tasks and parallel exploration. Each Agent starts with only the supplied prompt, in a separate context sharing this workspace. Include necessary context and clear file ownership. Do not duplicate delegated work. Relay useful conclusions to the user. SendMessage continues an existing child context. Background completions arrive automatically. Child tools inherit your permissions; nested delegation is disabled.\n</available_subagents>` };
+    const active = runtimeActive && settings.enabled;
+    const profiles = active
+      ? listSubagentProfilesSafe(ctx.cwd).profiles.filter(profile => !isSubagentProfileDisabled(settings, profile))
+      : [];
+    const profileSummary = profiles.map(profile => `${profile.name} (${profile.description})`).join("; ");
+    const compactText = active
+      ? `Use Agent for independent multi-step tasks and SendMessage to continue an owned child agent; completions arrive automatically.${profileSummary ? ` Profiles: ${profileSummary}.` : ""}`
+      : undefined;
+    const expandedBlock = active
+      ? `<available_subagents>\n${profiles.map(profile => `${profile.name}: ${profile.description}`).join("\n")}\nUse Agent for independent multi-step tasks and parallel exploration. Each Agent starts with only the supplied prompt, in a separate context sharing this workspace. Include necessary context and clear file ownership. Do not duplicate delegated work. Relay useful conclusions to the user. SendMessage continues an existing child context. Background completions arrive automatically. Child tools inherit your permissions; nested delegation is disabled.\n</available_subagents>`
+      : undefined;
+    applyExtensionPromptGuidance(event, {
+      key: "subagents",
+      toolNames: ["Agent", "SendMessage", "TaskOutput", "TaskStop"],
+      active,
+      compactText,
+      expandedBlock,
+      expandedMarker: "<available_subagents>",
+    });
   });
   const runtime = (id: string) => { const value = getSubagentRuntime(id); if (!value) throw new Error("Subagents are unavailable in this session"); return value; };
   api.registerTool(defineTool({

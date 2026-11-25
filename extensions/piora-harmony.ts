@@ -8,6 +8,7 @@ import { assertScenarioHapsAllowed } from "../lib/harmony/runtime/allowed-hap.ts
 import { assertHarmonyLocalSourceAllowed, assertNewHarmonyLocalFileAllowed } from "../lib/harmony/runtime/local-file-access.ts";
 import { requireValidObservation } from "../lib/harmony/observation/quality.ts";
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 import { Type } from "typebox";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { gestureCoordinates } from "../lib/harmony/scenario-executor.ts";
@@ -1568,12 +1569,13 @@ export default function pioraHarmony(api: ExtensionAPI) {
   if (!harmonyWorkbenchEnabled()) return;
   api.registerTool(harmonyControlTool);
   api.on?.("before_agent_start", (event) => {
-    const selected = event.systemPromptOptions.selectedTools ?? [];
-    const capabilities: string[] = [];
-    if (selected.some((name) => name.startsWith("harmony_")) && !event.systemPrompt.includes('<piora_runtime_capability name="harmony_phone_operator"')) capabilities.push(`<piora_runtime_capability name="harmony_phone_operator" availability="active">
- Harmony phone control is available through \`harmony_control\`. Start with operation=list_devices. Use operation=help with topic=run_scenario for multi-step semantic actions, waits and assertions; it acquires control automatically. Read operation-specific help before calling unfamiliar operations. Prefer the UI tree; request screenshots only when needed. Release control when done. Never claim device access is unavailable before checking this tool.
-</piora_runtime_capability>`);
-    if (!capabilities.length) return;
-    return { systemPrompt: `${event.systemPrompt}\n\n${capabilities.join("\n\n")}` };
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    const active = selected.some((name) => name.startsWith("harmony_") && !hidden.has(name));
+    applyExtensionPromptGuidance(event, {
+      key: "harmony",
+      toolNames: ["harmony_control", "harmony_device"],
+      active,
+    });
   });
 }

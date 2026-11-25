@@ -23,6 +23,7 @@ import { ModelCompactionSettings } from "./ModelCompactionSettings";
 import { ModelFallbackSetting } from "./ModelFallbackSetting";
 import { ReplySuggestionsSettings } from "./ReplySuggestionsSettings";
 import { SystemPromptEditor } from "./SystemPromptEditor";
+import { RuntimePromptSettings } from "./RuntimePromptSettings";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
 import {
   readPromptOptimizerSystemPrompt,
@@ -661,6 +662,7 @@ export function SettingsDialog({
                     />
                   </div>
                 </section>
+                <RuntimePromptSettings />
                 <section className={styles.promptCard} aria-labelledby="prompt-optimizer-heading">
                   <header className={styles.promptCardHeader}>
                     <h3 data-settings-id="conversation.promptOptimizer" id="prompt-optimizer-heading">{t("settings.promptOptimizerTitle")}</h3>

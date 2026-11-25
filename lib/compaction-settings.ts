@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { readRuntimePromptSettings } from "./prompt-runtime/settings.ts";
 
 /** A null reserve lets each model derive its own input budget. */
 export interface CompactionThresholdSettings {
@@ -87,7 +88,12 @@ function fitCompactionBudget(manager: CompactionPolicyManager, settings: Compact
   const safetyBuffer = Math.min(13_000, Math.max(4_096, Math.floor(window / 10)));
   // Leave room for a usable prompt on small models with large output limits.
   const automaticReserve = Math.min(Math.floor(window * 2 / 3), outputReserve + safetyBuffer);
-  const reserveTokens = explicitReserve !== undefined && settings.reserveTokens < window ? settings.reserveTokens : automaticReserve;
+  const alignCli = readRuntimePromptSettings().alignCliCompaction;
+  const reserveTokens = explicitReserve !== undefined
+    ? (settings.reserveTokens < window ? settings.reserveTokens : automaticReserve)
+    : alignCli
+      ? (window > settings.reserveTokens * 2 ? settings.reserveTokens : automaticReserve)
+      : automaticReserve;
   const inputBudget = window - reserveTokens;
   return {
     ...settings,

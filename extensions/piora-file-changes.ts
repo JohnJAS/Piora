@@ -1,7 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { generateUnifiedPatch, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { fileToolGuidance } from "../lib/file-tool-guidance.ts";
+import { compactFileToolGuidance, fileToolGuidance } from "../lib/file-tool-guidance.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 
 const MAX_CAPTURE_BYTES = 512 * 1024;
 
@@ -96,10 +97,18 @@ export default function pioraFileChanges(api: ExtensionAPI) {
   const pendingWrites = new Map<string, PendingWrite>();
 
   api.on("before_agent_start", (event) => {
-    if (event.systemPrompt.includes("<piora_file_tools>")) return;
-    const hidden = new Set(event.systemPromptOptions.hiddenTools ?? []);
-    const guidance = fileToolGuidance((event.systemPromptOptions.selectedTools ?? []).filter(name => !hidden.has(name)));
-    if (guidance) return { systemPrompt: `${event.systemPrompt}\n\n${guidance}` };
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    const visible = (event.systemPromptOptions?.selectedTools ?? []).filter(name => !hidden.has(name));
+    const compactText = compactFileToolGuidance(visible);
+    const expandedBlock = fileToolGuidance(visible);
+    applyExtensionPromptGuidance(event, {
+      key: "fileTools",
+      toolNames: [],
+      active: Boolean(compactText),
+      compactText,
+      expandedBlock,
+      expandedMarker: "<piora_file_tools>",
+    });
   });
 
   api.on("tool_call", async (event, ctx) => {

@@ -2,7 +2,7 @@ import { resolveLocalFileHref, resolveWorkspaceFilePath } from "./file-links";
 
 export interface FileReference { path: string; line?: number; column?: number }
 export const FILE_REFERENCE_HREF = "#piora-file=";
-export const FILE_REFERENCE_INSTRUCTIONS = "When referring to local files in replies, use full workspace-relative paths (or absolute paths for files outside the workspace), including the containing directories. Do not shorten a file reference to its basename alone. Preserve optional :line:column locations in the link target.";
+export const FILE_REFERENCE_INSTRUCTIONS = "When linking local files in replies, put the full workspace-relative path (or absolute path for files outside the workspace) and optional :line:column in the Markdown link target, and keep the visible link label concise (for example `[name.ts](path/to/name.ts:12)`).";
 
 /** Location suffixes are metadata; a Windows drive colon belongs to the path. */
 export function parseFileReference(value: string): FileReference | null {

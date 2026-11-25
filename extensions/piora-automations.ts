@@ -1,4 +1,5 @@
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { applyExtensionPromptGuidance } from "../lib/prompt-runtime/capabilities.ts";
 import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAutomationRuntime } from "../lib/automation-runtime.ts";
@@ -105,13 +106,12 @@ export default function pioraAutomations(api: ExtensionAPI) {
   }));
 
   api.on?.("before_agent_start", (event) => {
-    if (!event.systemPromptOptions.selectedTools?.includes("piora_automation")) return;
-    const capability = `<piora_runtime_capability name="scheduled_tasks" availability="active">
-${APP_DISPLAY_NAME} has a native scheduled-task runtime available through the \`piora_automation\` tool. When the user asks to schedule, automate, monitor, remind, repeat, follow up later, check back, or keep working at intervals, prefer this tool so the task appears in ${APP_DISPLAY_NAME}'s Scheduled Tasks page and runs with ${APP_DISPLAY_NAME}'s chat/project context. Prefer targetScope=chat for work that should continue the current conversation; use targetScope=project only for a separate task on each run. Windows Task Scheduler, \`schtasks\`, cron/launchd, startup scripts, and background services remain valid when the user explicitly asks for system-level scheduling or when the requirement cannot run inside ${APP_DISPLAY_NAME}; explain that choice. Never claim ${APP_DISPLAY_NAME} lacks scheduling before checking this tool.
-</piora_runtime_capability>`;
-    if (event.systemPrompt.includes('<piora_runtime_capability name="scheduled_tasks"')) return;
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n${capability}`,
-    };
+    const selected = event.systemPromptOptions?.selectedTools ?? [];
+    const hidden = new Set(event.systemPromptOptions?.hiddenTools ?? []);
+    applyExtensionPromptGuidance(event, {
+      key: "automations",
+      toolNames: ["piora_automation"],
+      active: selected.includes("piora_automation") && !hidden.has("piora_automation"),
+    });
   });
 }
