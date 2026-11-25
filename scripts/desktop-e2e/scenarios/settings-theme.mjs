@@ -6,13 +6,46 @@ export const settingsTheme = {
   coverage: ['actual settings navigation and radio clicks', 'rendered theme and localStorage agreement', 'reload persistence', 'glacier parallax and character pixel motion with fixed scenery', 'automatic whale-tide performance and return to idle', 'motion toggle and reduced motion', 'uncaught renderer errors'],
   limits: ['model calls and chat sending', 'native system dialogs', 'packaged builds and updates', 'visual design acceptance'],
   async run({ page, reload, screenshot, step, waitUntil }) {
+    const settingsButton = page.getByRole('button', { name: /^(Settings|设置)$/ });
+    const settingsDialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
+    const appearanceButton = settingsDialog.getByRole('button', { name: /^(Appearance & Language|外观与界面)$/ });
+    const darkRadio = settingsDialog.locator('[role="radio"][data-theme-id="dark"]');
     async function openAppearance() {
-      await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
-      const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
-      await dialog.getByRole('button', { name: /^(Appearance & Language|外观与界面)$/ }).click();
-      await dialog.locator('[role="radio"][data-theme-id="dark"]').waitFor();
-      return dialog;
+      await settingsButton.click();
+      await appearanceButton.click();
+      await darkRadio.waitFor();
+      return settingsDialog;
     }
+    async function warmAppearancePreview() {
+      // The hidden Font tab mounts two lazy Markdown chunks. Its copy button
+      // appears only when the real code block has replaced the fallback.
+      const preview = settingsDialog.locator('.font-reading-preview .markdown-code-action');
+      let visit = { settings: false, appearance: false };
+      const resetVisit = frame => {
+        if (frame === page.mainFrame()) visit = { settings: false, appearance: false };
+      };
+      page.on('framenavigated', resetVisit);
+      try {
+        await waitUntil(async () => {
+          const current = visit;
+          if (!current.settings && await settingsButton.isVisible()) {
+            current.settings = true;
+            await settingsButton.click();
+          }
+          if (!current.appearance && await appearanceButton.isVisible()) {
+            current.appearance = true;
+            await appearanceButton.click();
+          }
+          return current.appearance && await preview.count() > 0 && current === visit;
+        }, 'appearance font preview to render its code block');
+      } finally {
+        page.off('framenavigated', resetVisit);
+      }
+      // Start the measured steps in a fresh document after cold compilation.
+      await reload();
+    }
+    const waitForThemeTransition = () => page.waitForFunction(() =>
+      !CSS.supports('selector(:active-view-transition)') || !document.documentElement.matches(':active-view-transition'));
     async function assertTheme(theme) {
       await waitUntil(() => page.evaluate(expected => document.documentElement.dataset.theme === expected, theme), `rendered ${theme} theme`);
       // This only reads the persisted setting. The scenario never writes theme state through evaluate/API.
@@ -73,11 +106,13 @@ export const settingsTheme = {
       }, `character pixels move without pointer input in ${host}`);
       assert.equal(await characterScene.count(), 1);
     }
+    await step('warm-appearance-preview', warmAppearancePreview);
     let dialog;
     await step('open-settings', async () => { dialog = await openAppearance(); });
     await step('theme-dark', async () => {
       const radio = dialog.locator('[role="radio"][data-theme-id="dark"]');
       await radio.click(); await assertTheme('dark'); assert.equal(await radio.getAttribute('aria-checked'), 'true');
+      await waitForThemeTransition();
       await screenshot('dark.png');
     });
     await step('reload-dark', async () => {
@@ -86,6 +121,7 @@ export const settingsTheme = {
     });
     await step('theme-light', async () => {
       await dialog.locator('[role="radio"][data-theme-id="light"]').click(); await assertTheme('light');
+      await waitForThemeTransition();
     });
     await step('reload-light', async () => {
       await reload(); await assertTheme('light'); dialog = await openAppearance();
