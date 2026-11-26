@@ -12,19 +12,25 @@ function bind(callback, scope) {
   const js = ts.transpileModule(`return (${callback.getText(source)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   return new Function(...Object.keys(scope), js)(...Object.values(scope));
 }
-const loadCallback = findNode(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels").initializer.arguments[0];
-const catalogEffect = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("loadModels(controller.signal, (modelsRefreshKey ?? 0) > 0)")).arguments[0];
+const [loadCallback, loadDependencies] = findNode(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels").initializer.arguments;
+const [catalogEffect, catalogDependencies] = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("loadModels(controller.signal)")).arguments;
 const recoveryCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("if (!modelError) return;")).arguments[0];
 const dismissalCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("MODEL_ERROR_VISIBLE_MS")).arguments[0];
 
-test("a settings change forces the chat catalog to refresh and cancels obsolete requests", () => {
-  for (const [key, expected] of [[0, false], [1, true]]) {
+test("settings revisions reach the chat catalog loader and stale effects cancel obsolete requests", () => {
+  assert.ok(loadDependencies.elements.some(dependency => dependency.getText(source) === "modelsRefreshKey"));
+  assert.ok(catalogDependencies.elements.some(dependency => dependency.getText(source) === "loadModels"));
+  for (const revision of [0, 1, 2]) {
     let request;
-    const cleanup = bind(catalogEffect, {
-      AbortController, DOMException, modelsRefreshKey: key,
-      loadModels: (signal, force) => { request = { signal, force }; return Promise.resolve(); },
-    })();
-    assert.equal(request.force, expected);
+    const loadModels = bind(loadCallback, {
+      modelLoadIdRef: { current: 0 }, newSessionCwd: "/project", session: null,
+      modelsRefreshKey: revision,
+      fetchModelCatalog: options => { request = options; return Promise.resolve({ models: {} }); },
+    });
+    const cleanup = bind(catalogEffect, { AbortController, loadModels })();
+    assert.equal(request.settingsRevision, revision);
+    assert.equal(request.forceRefresh, false);
+    assert.equal(request.cwd, "/project");
     cleanup();
     assert.equal(request.signal.aborted, true);
   }
@@ -35,7 +41,7 @@ test("a repaired catalog clears the error and stale or cancelled responses canno
   let error = "missing cacheWrite";
   let names;
   const load = bind(loadCallback, {
-    modelLoadIdRef: { current: 0 }, newSessionCwd: "/project", session: null, isNew: false,
+    modelLoadIdRef: { current: 0 }, newSessionCwd: "/project", session: null, isNew: false, modelsRefreshKey: 0,
     fetchModelCatalog: () => new Promise(resolve => requests.push(resolve)),
     setModelNames: value => { names = value; }, setModelError: value => { error = value; },
     setModelThinkingLevels() {}, setModelThinkingLevelMaps() {}, setModelList() {},

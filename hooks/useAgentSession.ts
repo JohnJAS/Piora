@@ -7,6 +7,7 @@ import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 import type { ToolReviewRecord } from "@/lib/tool-review-types";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
+import { createSharedCommandStreamChannel } from "@/lib/shared-command-stream";
 import { savePendingPrompt, dismissPendingPrompt, readPendingPrompts, mergePendingPrompts, replaceFailedPromptMessage, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
@@ -557,6 +558,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const [toolReviews, setToolReviews] = useState<ToolReviewRecord[]>([]);
+  const toolReviewsSessionRef = useRef<string | null>(session?.id ?? null);
   const acceptToolReviews = useCallback((incoming: ToolReviewRecord[]) => {
     setToolReviews(current => {
       const records = new Map(current.map(record => [record.id, record]));
@@ -565,23 +567,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, []);
   useEffect(() => {
-    setToolReviews([]);
-    if (!session?.id) return;
+    const sid = session?.id ?? null;
+    if (toolReviewsSessionRef.current !== sid) {
+      toolReviewsSessionRef.current = sid;
+      setToolReviews([]);
+    }
+    if (!sid || sessionHydrating) return;
     const controller = new AbortController();
     const refresh = () => {
-      void fetch(`/api/sessions/${encodeURIComponent(session.id)}/tool-reviews`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(data => {
+      void fetch(`/api/sessions/${encodeURIComponent(sid)}/tool-reviews`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(data => {
         if (!controller.signal.aborted && Array.isArray(data?.reviews)) acceptToolReviews(data.reviews);
       }).catch(() => undefined);
     };
     refresh();
     const refreshVisible = () => { if (document.visibilityState !== "hidden") refresh(); };
-    const timer = window.setInterval(refreshVisible, 5000);
+    const timer = agentRunning || bashRunning ? window.setInterval(refreshVisible, 5000) : null;
     document.addEventListener("visibilitychange", refreshVisible);
-    return () => { controller.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [session?.id, acceptToolReviews]);
+    return () => { controller.abort(); if (timer !== null) window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
+  }, [session?.id, sessionHydrating, agentRunning, bashRunning, acceptToolReviews]);
   const [toolPermission, setToolPermission] = useState<ToolPermissionState | null>(() => opts.newSessionInitialPermissionMode
     ? { mode: opts.newSessionInitialPermissionMode, revision: 0 } : null);
+  const permissionHydratedSessionRef = useRef<string | null>(null);
   const acceptToolPermission = useCallback((next: ToolPermissionState) => {
+    if (sessionIdRef.current) permissionHydratedSessionRef.current = sessionIdRef.current;
     setToolPermission(current => !current || next.revision >= current.revision ? next : current);
   }, []);
   const [permissionSaving, setPermissionSaving] = useState(false);
@@ -593,9 +601,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let disposed = false;
     if (session?.id && permissionOwnerRef.current !== session.id) {
       permissionOwnerRef.current = session.id;
+      permissionHydratedSessionRef.current = null;
       permissionOverrideRef.current = undefined;
       setToolPermission(null);
     }
+    if (session?.id && sessionHydrating) return;
     const refresh = async () => {
       const sid = session?.id ?? sessionIdRef.current;
       const generation = ++permissionReadGeneration.current;
@@ -609,11 +619,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       } catch { /* Keep the control disabled until authoritative state is available. */ }
     };
-    void refresh();
+    if (!session?.id || permissionHydratedSessionRef.current !== session.id) {
+      void refresh();
+    }
     window.addEventListener("focus", refresh);
     window.addEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh);
     return () => { disposed = true; window.removeEventListener("focus", refresh); window.removeEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh); };
-  }, [session?.id, newSessionCwd, acceptToolPermission]);
+  }, [session?.id, sessionHydrating, newSessionCwd, acceptToolPermission]);
 
   const agentRunningRef = useRef(initiallyRunning);
   const [backgroundSubagents, setBackgroundSubagents] = useState(false);
@@ -630,6 +642,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const bashRunningRef = useRef(false);
   const bashRecoveryIdRef = useRef(0);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
+  const applyConnectedStateRef = useRef<((sid: string, state?: AgentStateResponse) => void) | null>(null);
+  const sharedCommandStream = useMemo(() => createSharedCommandStreamChannel(), []);
   const initialScrollDoneRef = useRef(false);
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToUserRef = useRef(false);
@@ -1003,8 +1017,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sid: string,
   ): Promise<EventStreamConnectionResult> {
     closeEvents(true);
-    const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`);
+    const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta&include=commands`);
+    const nativeClose = es.close.bind(es);
+    es.close = () => {
+      nativeClose();
+      sharedCommandStream.deactivate(sid, es);
+    };
     eventSourceRef.current = es;
+    sharedCommandStream.activate(sid, es);
     const decodeEvent = createAgentEventDecoder();
 
     return new Promise((resolve) => {
@@ -1020,19 +1040,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       es.onmessage = (e) => {
         if (eventSourceRef.current !== es) return;
         try {
-          const event = decodeEvent(JSON.parse(e.data) as AgentEvent);
+          const raw = JSON.parse(e.data) as AgentEvent & { payload?: unknown };
+          if (raw?.type === "command_stream") {
+            sharedCommandStream.emit(sid, raw.payload, es);
+            return;
+          }
+          const event = decodeEvent(raw);
           if (!event) return;
-          if (event.type === "connected") settle("connected");
+          if (event.type === "connected") {
+            applyConnectedStateRef.current?.(sid, event.state as AgentStateResponse | undefined);
+            settle("connected");
+          }
           handleAgentEventRef.current?.(event);
         } catch {
           // ignore
         }
       };
       es.onerror = () => {
+        sharedCommandStream.emitError(sid, es);
         if (es.readyState === EventSource.CLOSED) {
           // Fatal error (404/500/content-type mismatch): browser won't
           // auto-reconnect. Settle the Promise and manually reconnect for
           // already-running sessions.
+          sharedCommandStream.deactivate(sid, es);
           settle("closed");
           if (eventSourceRef.current === es && agentRunningRef.current) {
             eventSourceRef.current = null;
@@ -1046,11 +1076,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // connection must be ready before they continue.
       };
     });
-  }, [closeEvents]);
+  }, [closeEvents, sharedCommandStream]);
 
   const ensureEventsConnected = useCallback(async (sid: string) => {
     const current = eventSourceRef.current;
-    if (current?.readyState === EventSource.OPEN && current.url.endsWith(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`)) return;
+    const baseUrl = `/api/agent/${encodeURIComponent(sid)}/events?transport=delta`;
+    if (current?.readyState === EventSource.OPEN && (current.url.endsWith(baseUrl) || current.url.endsWith(`${baseUrl}&include=commands`))) return;
     const result = await connectEvents(sid);
     if (result.status === "connected" || result.source.readyState === EventSource.OPEN) return;
     if (eventSourceRef.current === result.source) eventSourceRef.current = null;
@@ -1807,6 +1838,40 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;
+  applyConnectedStateRef.current = (sid, state) => {
+    if (!state || sessionIdRef.current !== sid) return;
+    if (cancelledPromptRunIdRef.current === promptRunIdRef.current) return;
+    if (state.runtime && state.runtime !== "idle") restoreStatusClock(state);
+    const compacting = Boolean(state.isCompacting);
+    setIsCompacting(compacting);
+    setCompactionStartedAt(compacting ? state.compactionStartedAt ?? null : null);
+    if (state.queuedMessages) setQueuedMessages(normalizeQueuedMessages(state.queuedMessages));
+    if (state.runtime === "stopping") setAgentPhase({ kind: "stopping" });
+    else if (state.activeTools) {
+      const tools = state.activeTools;
+      if (state.statusPhaseKind === "agent") setAgentPhase(null);
+      else if (state.statusPhaseKind === "waiting_model") setAgentPhase({ kind: "waiting_model" });
+      else if (state.statusPhaseKind === "running_command") setAgentPhase({ kind: "running_command" });
+      else setAgentPhase((phase) => tools.length
+        ? { kind: "running_tools", tools }
+        : phase?.kind === "running_tools" || phase?.kind === "stopping" ? { kind: "waiting_model" } : phase);
+    }
+    const busy = Boolean(
+      state.isStreaming
+      || state.isPromptRunning
+      || state.isCompacting
+      || state.isBashRunning
+      || (state.runtime && state.runtime !== "idle"),
+    );
+    if (
+      agentRunningRef.current
+      && !busy
+      && preparingPromptRunIdRef.current !== promptRunIdRef.current
+      && !promptSubmissionRef.current?.pending
+    ) {
+      void reconcileAgentState(sid);
+    }
+  };
 
   // A background child outlives the foreground prompt. Keep its parent's
   // stream subscribed without keeping the composer busy, and hydrate the
@@ -1942,6 +2007,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return commandCatalogRef.current;
     },
     connectModelEvents: ensureEventsConnected,
+    sharedCommandStream,
+    deferStandaloneStream: sessionHydrating,
     resumeQueuedInput,
     uploadFiles: uploadPromptMaterialFiles,
     onAccepted: () => { if (isNew) promoteNewSession(); },
@@ -2591,6 +2658,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
     const d = await fetchModelCatalog({
       forceRefresh,
+      settingsRevision: modelsRefreshKey,
       ...(modelCwd ? { cwd: modelCwd } : {}),
       ...(signal ? { signal } : {}),
     });
@@ -2619,7 +2687,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setThinkingLevel((pinned as ThinkingLevelOption | undefined) ?? "auto");
       }
     }
-  }, [isNew, newSessionCwd, session?.cwd]);
+  }, [isNew, modelsRefreshKey, newSessionCwd, session?.cwd]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
@@ -3160,12 +3228,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Load model list
   useEffect(() => {
     const controller = new AbortController();
-    loadModels(controller.signal, (modelsRefreshKey ?? 0) > 0).catch((e) => {
+    loadModels(controller.signal).catch((e) => {
       if (controller.signal.aborted) return;
       setModelError(e instanceof Error ? e.message : String(e));
     });
     return () => controller.abort();
-  }, [loadModels, modelsRefreshKey]);
+  }, [loadModels]);
 
   // A file edited outside Settings produces no refresh notification. Recheck
   // errors until the config recovers, without touching the running session.

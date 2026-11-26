@@ -1532,6 +1532,29 @@ export function AppShell() {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
 
+  const handleCloseRightPanel = useCallback(() => {
+    setRightPanelOpen(false);
+  }, []);
+
+  const handleOpenShellSettings = useCallback(() => {
+    setSettingsKey("shell");
+    setSettingsDialogOpen(true);
+  }, []);
+
+  const handleGuideAgent = useCallback((prompt?: string) => {
+    setRightPanelMaximized(false);
+    if (selectedRoom) {
+      roomWorkspaceRef.current?.guideMember(roomPanelMember?.binding.sessionId ?? null, prompt);
+      return;
+    }
+    if (prompt?.trim()) chatInputRef.current?.prependText(prompt);
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, [selectedRoom, roomPanelMember?.binding.sessionId]);
+
+  const handleAutomationChanged = useCallback(() => {
+    setSessionKey((key) => key + 1);
+  }, []);
+
   const handleSessionForked = useCallback((newSessionId: string) => {
     workspaceNavigationVersionRef.current++;
     setHistoryDialogOpen(false);
@@ -1803,12 +1826,24 @@ export function AppShell() {
     setTopbarGitStatus(null);
     setCurrentIsGitRepository(false);
   }, [currentProjectCwd, selectedRoom]);
+  const gitPollCwdRef = useRef<string | null>(null);
+  const gitPollRefreshRef = useRef(explorerRefreshKey);
+  const gitPrevBusyRef = useRef(false);
   useEffect(() => {
     if (!currentProjectCwd || selectedRoom) {
+      gitPollCwdRef.current = null;
+      gitPrevBusyRef.current = false;
       setTopbarGitStatus(null);
       setCurrentIsGitRepository(false);
       return;
     }
+    const isTaskBusy = Boolean(taskControls?.disabled);
+    const cwdOrRefreshChanged = gitPollCwdRef.current !== currentProjectCwd || gitPollRefreshRef.current !== explorerRefreshKey;
+    const justFinishedTask = gitPrevBusyRef.current && !isTaskBusy;
+    gitPollCwdRef.current = currentProjectCwd;
+    gitPollRefreshRef.current = explorerRefreshKey;
+    gitPrevBusyRef.current = isTaskBusy;
+
     let disposed = false;
     let consecutiveGitFailures = 0;
     let timer: number | undefined;
@@ -1830,12 +1865,16 @@ export function AppShell() {
       }
       // Recover the entry after a transient startup failure, including idle chats.
       const retryStartup = consecutiveGitFailures > 0 && consecutiveGitFailures <= 2;
-      if (!disposed && !requestController.signal.aborted && (taskControls?.disabled || retryStartup) && document.visibilityState === "visible") {
-        timer = window.setTimeout(() => { void load(); }, 2_500);
+      if (!disposed && !requestController.signal.aborted && (isTaskBusy || retryStartup) && document.visibilityState === "visible") {
+        timer = window.setTimeout(() => { void load(); }, 5_000);
       }
     };
     const refresh = () => { if (!disposed) void load(); };
-    void load();
+    if (cwdOrRefreshChanged || justFinishedTask) {
+      void load();
+    } else if (isTaskBusy && document.visibilityState === "visible") {
+      timer = window.setTimeout(() => { void load(); }, 5_000);
+    }
     const onVisibility = () => {
       if (document.visibilityState === "visible") refresh();
       else { controller?.abort(); if (timer !== undefined) window.clearTimeout(timer); }
@@ -3227,7 +3266,7 @@ export function AppShell() {
           onActiveTabChange={setRightPanelTab}
           maximized={rightPanelMaximized}
           onMaximizedChange={setRightPanelMaximized}
-          onClosePanel={() => setRightPanelOpen(false)}
+          onClosePanel={handleCloseRightPanel}
           cwd={workspaceCwd}
           refreshKey={explorerRefreshKey}
           commitRequest={commitRequest}
@@ -3258,15 +3297,10 @@ export function AppShell() {
           sessionId={selectedRoom ? roomPanelMember?.binding.sessionId ?? null : selectedSession?.id ?? null}
           sessionName={selectedRoom ? roomPanelMember?.profile.name : selectedSession?.name}
           sessionRunning={Boolean(taskControls?.disabled)}
-          onOpenShellSettings={() => { setSettingsKey("shell"); setSettingsDialogOpen(true); }}
-          onGuideAgent={(prompt) => {
-            setRightPanelMaximized(false);
-            if (selectedRoom) { roomWorkspaceRef.current?.guideMember(roomPanelMember?.binding.sessionId ?? null, prompt); return; }
-            if (prompt?.trim()) chatInputRef.current?.prependText(prompt);
-            window.requestAnimationFrame(() => chatInputRef.current?.focus());
-          }}
+          onOpenShellSettings={handleOpenShellSettings}
+          onGuideAgent={handleGuideAgent}
           onSelectAutomation={setSelectedAutomationId}
-          onAutomationChanged={() => setSessionKey((key) => key + 1)}
+          onAutomationChanged={handleAutomationChanged}
           capabilities={selectedRoom ? null : sessionCapabilities}
           sideChat={sideChat.panelProps}
         /></div> : null}

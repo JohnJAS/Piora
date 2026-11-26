@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useI18n } from "@/hooks/useI18n";
@@ -18,6 +18,7 @@ import { AutomationPanel } from "../AutomationPanel";
 import { SSHPanel } from "./SSHPanel";
 import { PlanSidePanelTab } from "../workflow/PlanSidePanelTab";
 import { GoalSidePanelTab } from "../workflow/GoalSidePanelTab";
+import { RunChangesPane } from "./RunChangesPane";
 import {
   dispatchFocusSideChatComposer,
   isSideChatTab,
@@ -33,8 +34,6 @@ import {
   type RightPanelSideChatProps,
 } from "../side-chat/SideChatRightPanelSlots";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
-import type { PromptFileChanges } from "@/lib/prompt-file-changes";
-import { pollVisibleDocument } from "@/lib/visible-poller";
 import type { BrowserNavigationRequest } from "@/lib/answer-links";
 
 type StaticToolTab = "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony" | "plan" | "goal";
@@ -109,7 +108,59 @@ type ToolTab = StaticToolTab;
 const TREE_SPLIT_KEY = "piora-file-tree-share";
 const TREE_HANDLE_WIDTH = 6;
 
-export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPanel(props, ref) {
+interface FileViewerTabSlotProps {
+  tab: Tab;
+  selected: boolean;
+  panelActive: boolean;
+  cwd: string | null;
+  refreshKey: number;
+  onDirtyChange: (id: string, dirty: boolean) => void;
+  onRefresh: () => void;
+  onMentionLines: (relativePath: string, startLine: number, endLine: number) => void;
+  onOpenFile: (path: string, name: string, options?: { sourceSessionId?: string | null; modeHint?: "diff"; line?: number; column?: number }) => void;
+}
+
+const FileViewerTabSlot = memo(function FileViewerTabSlot({
+  tab,
+  selected,
+  panelActive,
+  cwd,
+  refreshKey,
+  onDirtyChange,
+  onRefresh,
+  onMentionLines,
+  onOpenFile,
+}: FileViewerTabSlotProps) {
+  const handleDirtyChange = useCallback(
+    (dirty: boolean) => onDirtyChange(tab.id, dirty),
+    [onDirtyChange, tab.id],
+  );
+  const handleOpenFile = useCallback(
+    (path: string, options?: { sourceSessionId?: string | null; modeHint?: "diff"; line?: number; column?: number }) => {
+      onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path, options);
+    },
+    [onOpenFile],
+  );
+  return <div aria-hidden={!selected} style={{ position: "absolute", inset: 0, display: selected ? "block" : "none", overflow: "hidden" }}>
+    <FileViewer
+      filePath={tab.filePath}
+      cwd={tab.cwd ?? cwd ?? undefined}
+      sourceSessionId={tab.sourceSessionId}
+      gitRefreshKey={refreshKey}
+      initialDisplayMode={tab.initialDisplayMode}
+      revealLine={tab.revealLine}
+      revealColumn={tab.revealColumn}
+      revealKey={tab.revealKey}
+      active={panelActive && selected}
+      onDirtyChange={handleDirtyChange}
+      onSaved={onRefresh}
+      onMentionLines={panelActive && selected ? onMentionLines : undefined}
+      onOpenFile={handleOpenFile}
+    />
+  </div>;
+});
+
+export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function RightPanel(props, ref) {
   const { t } = useI18n();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const filesRootRef = useRef<HTMLDivElement>(null);
@@ -118,14 +169,13 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   const [treeDrawerOpen, setTreeDrawerOpen] = useState(false);
   const [resizingTree, setResizingTree] = useState(false);
   const [fileNavMode, setFileNavMode] = useState<"tree" | "run">("tree");
-  const [runChanges, setRunChanges] = useState<PromptFileChanges | null>(null);
   const [browserNavigation, setBrowserNavigation] = useState<BrowserNavigationRequest | undefined>();
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const firstLauncherRef = useRef<HTMLButtonElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuRef = useRef<HTMLDivElement | null>(null);
-  const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId } = props;
+  const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId, onOpenFile } = props;
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addMenuPosition, setAddMenuPosition] = useState({ left: 8, top: 48, width: 278 });
   const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" || isSideChatTab(activeTab) ? [] : [activeTab]);
@@ -153,24 +203,23 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
 
   useEffect(() => { if (!compactFiles) setTreeDrawerOpen(false); }, [compactFiles]);
 
-  useEffect(() => {
-    if (activeTab !== "files" || !props.sessionId) { setRunChanges(null); return; }
-    const sessionId = props.sessionId;
-    setRunChanges((current) => current?.sessionId === sessionId ? current : null);
-    let cancelled = false;
-    const load = async (signal: AbortSignal) => {
-      try {
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/changes`, { cache: "no-store", signal });
-        if (!response.ok) return;
-        const data = await response.json() as PromptFileChanges | null;
-        if (!cancelled && !signal.aborted) setRunChanges(data);
-      } catch { if (!cancelled && !signal.aborted) setRunChanges(null); }
-    };
-    const controller = new AbortController();
-    const polling = props.sessionRunning ? pollVisibleDocument(load, 2500) : null;
-    if (!polling) void load(controller.signal);
-    return () => { cancelled = true; controller.abort(); polling?.stop(); };
-  }, [activeTab, props.sessionId, props.sessionRunning, refreshKey]);
+  const selectedFilePath = useMemo(
+    () => fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null,
+    [fileTabs, activeFileTabId],
+  );
+  const handleExplorerOpenFile = useCallback((
+    path: string,
+    name: string,
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; line?: number; column?: number },
+  ) => {
+    onOpenFile(path, name, options);
+    setTreeDrawerOpen(false);
+  }, [onOpenFile]);
+  const handleOpenReview = useCallback(() => onActiveTabChange("review"), [onActiveTabChange]);
+  const handleOpenRunFile = useCallback((path: string, name: string, options?: { modeHint?: "diff" }) => {
+    onOpenFile(path, name, options);
+    setTreeDrawerOpen(false);
+  }, [onOpenFile]);
 
   const changeTreeWidth = (candidate: number) => {
     const width = filesRootRef.current?.getBoundingClientRect().width ?? 0;
@@ -418,20 +467,18 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
         {compactFiles ? <button className={styles.fileTreeRail} type="button" aria-label={t("files.explorer")} aria-expanded={treeDrawerOpen} onClick={() => setTreeDrawerOpen((open) => !open)}><AliIcon name="folder-open" size={16} /></button> : null}
         {compactFiles && treeDrawerOpen ? <button className={styles.fileTreeBackdrop} type="button" aria-label={t("i18n.close")} onClick={() => setTreeDrawerOpen(false)} /> : null}
         <div id="piora-file-explorer" className={styles.explorer} style={{ gridColumn: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: compactFiles ? treeDrawerOpen ? "flex" : "none" : "flex", flexDirection: "column", ...(compactFiles ? { position: "absolute" as const, zIndex: 12, left: 40, top: 0, bottom: 0, width: "min(320px, calc(100% - 40px))", background: "var(--bg-panel)", boxShadow: "var(--shadow-popover)" } : {}) }}>
-          <div className={styles.fileNavigatorTabs} role="tablist" aria-label={t("files.navigator")}>
-            <button type="button" role="tab" aria-selected={fileNavMode === "tree"} onClick={() => setFileNavMode("tree")}>{t("files.explorer")}</button>
-            <button type="button" role="tab" aria-selected={fileNavMode === "run"} onClick={() => setFileNavMode("run")}>{t("files.thisRun")}{runChanges?.files.length ? ` ${runChanges.files.length}` : ""}</button>
-          </div>
-          <div className={styles.fileNavigatorBody} hidden={fileNavMode !== "tree"} style={{ flex: 1, minHeight: 0, overflow: "auto", display: fileNavMode === "tree" ? undefined : "none" }}>{cwd ? <FileExplorer ref={explorerRef} cwd={cwd} selectedFilePath={fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null} onOpenFile={(path, name, options) => { props.onOpenFile(path, name, options); setTreeDrawerOpen(false); }} refreshKey={refreshKey} onAtMention={props.onMention} onAtMentions={props.onMentions} changesCollapsed /> : <div className={styles.empty}>{t("workspace.selectProject")}</div>}</div>
-          <div className={styles.fileNavigatorBody} hidden={fileNavMode !== "run"} style={{ flex: 1, minHeight: 0, overflow: "auto", display: fileNavMode === "run" ? undefined : "none" }}>
-            <div className={styles.runSummary}>
-              <span>{runChanges?.status === "running" ? t("files.runRunning") : runChanges?.status === "aborted" ? t("files.runAborted") : runChanges?.status === "error" ? t("files.runError") : runChanges?.status === "unavailable" ? t("files.runUnavailable") : t("files.thisRun")}</span>
-              <button type="button" onClick={() => onActiveTabChange("review")}>{t("files.reviewAll")}</button>
-            </div>
-            {runChanges ? <div className={styles.runScope}>{t("files.runScope")}</div> : null}
-            {runChanges?.partial ? <div className={styles.runNotice}>{t("files.runPartial")}</div> : null}
-            {runChanges?.files.length ? runChanges.files.map((file) => <button key={file.path} className={styles.runFile} type="button" title={file.path} onClick={() => { props.onOpenFile(file.path, file.path.replace(/\\/g, "/").split("/").pop() ?? file.path, file.kind === "deleted" ? { modeHint: "diff" } : undefined); setTreeDrawerOpen(false); }}><AliIcon name="file" size={14} /><span>{file.path.replace(/\\/g, "/").split("/").pop()}</span><small>{t(`files.run.${file.kind}`)}</small></button>) : <div className={styles.runEmpty}>{!runChanges ? t("files.runNever") : runChanges.status === "running" ? t("files.runPending") : runChanges.status === "unavailable" ? t("files.runUnavailable") : t("files.runEmpty")}</div>}
-          </div>
+          <RunChangesPane
+            active={activeTab === "files"}
+            sessionId={props.sessionId}
+            sessionRunning={props.sessionRunning}
+            refreshKey={refreshKey}
+            fileNavMode={fileNavMode}
+            onFileNavModeChange={setFileNavMode}
+            onOpenReview={handleOpenReview}
+            onOpenRunFile={handleOpenRunFile}
+          >
+            {cwd ? <FileExplorer ref={explorerRef} cwd={cwd} selectedFilePath={selectedFilePath} onOpenFile={handleExplorerOpenFile} refreshKey={refreshKey} onAtMention={props.onMention} onAtMentions={props.onMentions} changesCollapsed /> : <div className={styles.empty}>{t("workspace.selectProject")}</div>}
+          </RunChangesPane>
         </div>
         <div className={styles.fileTreeSplitter} style={{ gridColumn: 2, display: compactFiles ? "none" : undefined, position: "relative", cursor: "col-resize", touchAction: "none" }} role="separator" tabIndex={compactFiles ? -1 : 0} aria-hidden={compactFiles} aria-label={t("files.resizeTree")} aria-orientation="vertical" aria-controls="piora-file-explorer piora-file-viewer" aria-valuemin={160} aria-valuemax={maxTreeWidth} aria-valuenow={treeWidth}
           onKeyDown={(event) => {
@@ -456,10 +503,20 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
             onMoveTab={props.onMoveFileTab}
             onReopenClosedTab={props.onReopenClosedFileTab}
           /></div>
-          <div className={styles.fileBody} style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden" }}>{fileTabs.length ? fileTabs.map((tab) => {
-            const selected = tab.id === activeFileTabId;
-            return <div key={tab.id} aria-hidden={!selected} style={{ position: "absolute", inset: 0, display: selected ? "block" : "none", overflow: "hidden" }}><FileViewer filePath={tab.filePath} cwd={tab.cwd ?? cwd ?? undefined} sourceSessionId={tab.sourceSessionId} gitRefreshKey={refreshKey} initialDisplayMode={tab.initialDisplayMode} revealLine={tab.revealLine} revealColumn={tab.revealColumn} revealKey={tab.revealKey} active={active && activeTab === "files" && selected} onDirtyChange={(dirty) => props.onDirtyChange(tab.id, dirty)} onSaved={props.onRefresh} onMentionLines={active && selected ? props.onMentionLines : undefined} onOpenFile={(path, options) => props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path, options)} /></div>;
-          }) : <div className={styles.empty}>{t("files.noneOpen")}</div>}</div>
+          <div className={styles.fileBody} style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden" }}>{fileTabs.length ? fileTabs.map((tab) => (
+            <FileViewerTabSlot
+              key={tab.id}
+              tab={tab}
+              selected={tab.id === activeFileTabId}
+              panelActive={active && activeTab === "files"}
+              cwd={cwd}
+              refreshKey={refreshKey}
+              onDirtyChange={props.onDirtyChange}
+              onRefresh={props.onRefresh}
+              onMentionLines={props.onMentionLines}
+              onOpenFile={props.onOpenFile}
+            />
+          )) : <div className={styles.empty}>{t("files.noneOpen")}</div>}</div>
         </div>
       </div>
       </RenderErrorBoundary> : null}
@@ -519,4 +576,4 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <SideChatTabPanels sideChat={props.sideChat} panelActive={active} activeTab={activeTab} panelClassName={styles.panel} />
   </div>;
-});
+}));

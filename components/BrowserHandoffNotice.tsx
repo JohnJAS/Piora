@@ -5,7 +5,7 @@ import type { BrowserUserWaitSnapshot, BrowserUserWaitStatus } from "@/lib/brows
 import { browserWaitPurpose, type BrowserWaitPurpose } from "@/lib/browser-wait-policy";
 
 type Snapshot = { wait: BrowserUserWaitSnapshot | null; outcome?: { toolCallId: string; status: BrowserUserWaitStatus; endedAt: number; purpose?: BrowserWaitPurpose } | null };
-export function BrowserHandoffNotice({ sessionId, busy, onWaitingChange }: { sessionId?: string; busy: boolean; onWaitingChange?: (waiting: boolean) => void }) {
+export function BrowserHandoffNotice({ sessionId, busy, deferInitialFetch = false, onWaitingChange }: { sessionId?: string; busy: boolean; deferInitialFetch?: boolean; onWaitingChange?: (waiting: boolean) => void }) {
   const { locale } = useI18n();
   const zh = locale === "zh-CN";
   const [snapshot, setSnapshot] = useState<{ id: string; data: Snapshot; receivedAt: number } | null>(null);
@@ -13,20 +13,48 @@ export function BrowserHandoffNotice({ sessionId, busy, onWaitingChange }: { ses
   const [continueError, setContinueError] = useState<{ toolCallId: string; message: string } | null>(null);
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || deferInitialFetch) return;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let waitingVisibility = false;
+    const schedule = (delayMs: number) => {
+      if (!busy || controller.signal.aborted) return;
+      if (document.visibilityState === "hidden") {
+        waitingVisibility = true;
+        return;
+      }
+      waitingVisibility = false;
+      clearTimeout(timer);
+      timer = setTimeout(() => { void refresh(); }, delayMs);
+    };
     const refresh = async () => {
       let loginWaiting = false;
+      let hasActiveWait = false;
       try {
         const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/browser-wait`, { signal: controller.signal, cache: "no-store" });
-        if (response.ok) { const data: Snapshot = await response.json(); loginWaiting = Boolean(data.wait && browserWaitPurpose(data.wait.reason, data.wait.purpose) === "login"); if (!controller.signal.aborted) setSnapshot({ id: sessionId, data, receivedAt: Date.now() }); }
+        if (response.ok) {
+          const data: Snapshot = await response.json();
+          hasActiveWait = Boolean(data.wait);
+          loginWaiting = Boolean(data.wait && browserWaitPurpose(data.wait.reason, data.wait.purpose) === "login");
+          if (!controller.signal.aborted) setSnapshot({ id: sessionId, data, receivedAt: Date.now() });
+        }
       } catch { /* Reconcile again without turning a network interruption into a resumed notice. */ }
-      if (busy && !controller.signal.aborted) timer = setTimeout(refresh, loginWaiting ? 250 : 1500);
+      schedule(loginWaiting ? 250 : hasActiveWait ? 1_500 : 4_000);
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden" && waitingVisibility && busy && !controller.signal.aborted) {
+        waitingVisibility = false;
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     void refresh();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [sessionId, busy]);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [sessionId, busy, deferInitialFetch]);
   const isWaiting = snapshot?.id === sessionId && snapshot?.data.wait?.backend === "desktop";
   const wait = snapshot && snapshot.id === sessionId ? snapshot.data.wait : null;
   const login = Boolean(wait && browserWaitPurpose(wait.reason, wait.purpose) === "login");

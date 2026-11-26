@@ -893,6 +893,20 @@ export class AgentSessionWrapper {
     };
   }
 
+  /** Pure in-memory runtime snapshot for initial SSE connect/reconnect frames. */
+  getStreamConnectState() {
+    return {
+      ...this.getRuntimeState("progress"),
+      activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
+      pendingApproval: this.uiBridge.hasPendingApproval(),
+      queuedMessages: {
+        pendingInputs: this.getPendingInputs(),
+        steering: [...this.inner.getSteeringMessages()],
+        followUp: [...this.inner.getFollowUpMessages()],
+      },
+    };
+  }
+
   private static buildCommandHost(wrapper: AgentSessionWrapper): RpcCommandHost {
     return {
       get inner() { return wrapper.inner; },

@@ -19,6 +19,7 @@ export function useWorkflow(
   running: boolean,
   executeAction: (action: WorkflowAction) => Promise<WorkflowSnapshot>,
   liveSnapshot?: WorkflowSnapshot | null,
+  deferInitialLoad = false,
 ) {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot | null>(null);
@@ -30,6 +31,7 @@ export function useWorkflow(
   const generation = useRef(0);
   const actionInFlight = useRef(false);
   const request = useRef<AbortController | null>(null);
+  const lastFetchedRef = useRef<{ sid: string; at: number } | null>(null);
 
   const accept = useCallback((next: WorkflowSnapshot) => {
     if (next.sessionId !== latest.current.sessionId) return;
@@ -56,6 +58,7 @@ export function useWorkflow(
       if (!response.ok) throw new Error(latest.current.t("workflow.loadError"));
       const next = await response.json() as WorkflowSnapshot;
       if (epoch !== generation.current || controller.signal.aborted || latest.current.sessionId !== sid) return;
+      lastFetchedRef.current = { sid, at: Date.now() };
       accept(next);
       setLoadError(null);
     } catch {
@@ -73,21 +76,35 @@ export function useWorkflow(
   useEffect(() => {
     const epoch = ++generation.current;
     request.current?.abort(); request.current = null;
+    lastFetchedRef.current = null;
     actionInFlight.current = false;
     setSnapshot(null); setLoadError(null); setActionError(null); setBusy(false);
-    if (sessionId) void reconcile();
+    if (sessionId && !deferInitialLoad) void reconcile();
     return () => { generation.current = epoch + 1; request.current?.abort(); request.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, reconcile]);
 
+  const hasActiveWorkflow = Boolean(snapshot?.sessionId === sessionId && (snapshot.mode !== "agent" || snapshot.current));
+
   useEffect(() => {
-    if (!sessionId || !visible) return;
-    const refreshVisible = () => { if (document.visibilityState !== "hidden") void reconcile(); };
+    if (!sessionId || !visible || deferInitialLoad) return;
+    const isStale = () => !lastFetchedRef.current || lastFetchedRef.current.sid !== sessionId || Date.now() - lastFetchedRef.current.at >= 5_000;
+    const refreshVisible = () => {
+      if (document.visibilityState !== "hidden" && !request.current && isStale()) void reconcile();
+    };
     refreshVisible();
-    const timer = setInterval(refreshVisible, running ? 1_000 : 3_000);
+    const pollMs = hasActiveWorkflow ? (running ? 5_000 : 15_000) : (running ? 30_000 : 0);
+    const timer = pollMs > 0 ? setInterval(() => {
+      if (document.visibilityState !== "hidden") void reconcile();
+    }, pollMs) : null;
     window.addEventListener("online", refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
-    return () => { clearInterval(timer); window.removeEventListener("online", refreshVisible); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [sessionId, visible, running, reconcile]);
+    return () => {
+      if (timer) clearInterval(timer);
+      window.removeEventListener("online", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [sessionId, visible, running, hasActiveWorkflow, deferInitialLoad, reconcile]);
 
   const act = useCallback(async (
     action: WorkflowAction["action"],

@@ -27,8 +27,8 @@
 .capabilityPanelBody { flex: 1; min-height: 0; overflow: hidden; }
 .capabilityAccess { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 30px; padding: 5px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); background: color-mix(in srgb, var(--bg-panel) 78%, var(--bg)); color: var(--text-muted); font-size: var(--text-xs); }
 .capabilityAccess[data-enabled="true"] { color: var(--accent); }
-.filesRoot { position: relative; height: 100%; min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 28fr) 6px minmax(0, 72fr); }
-.explorer { grid-column: 1; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.filesRoot { position: relative; height: 100%; min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 28fr) 6px minmax(0, 72fr); contain: layout style; }
+.explorer { grid-column: 1; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border); contain: layout style; }
 .fileNavigatorTabs { flex: 0 0 auto; display: flex; padding: 5px; gap: 3px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
 .fileNavigatorTabs button { min-width: 0; flex: 1; padding: 6px 3px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: var(--text-xs); }
 .fileNavigatorTabs button[aria-selected="true"] { background: var(--bg-selected); color: var(--text); }
@@ -56,7 +56,7 @@
 .filesRoot[data-compact="true"] .explorer { position: absolute; z-index: 12; left: 40px; top: 0; bottom: 0; width: min(320px, calc(100% - 40px)); display: none; background: var(--bg-panel); box-shadow: var(--shadow-popover); }
 .filesRoot[data-compact="true"][data-tree-open="true"] .explorer { display: flex; }
 .filesRoot[data-compact="true"] .fileTreeBackdrop { display: block; position: absolute; z-index: 11; inset: 0 0 0 40px; border: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); }
-.fileViewer { grid-column: 3; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.fileViewer { grid-column: 3; min-width: 0; min-height: 0; display: flex; flex-direction: column; contain: layout style; }
 .filesRoot[data-compact="true"] .fileViewer { grid-column: 2; }
 .fileTabs { flex: 0 0 auto; border-bottom: 1px solid var(--border); min-height: 36px; }
 .fileBody { position: relative; flex: 1; min-height: 0; overflow: hidden; }

@@ -15,7 +15,7 @@ export function virtualIndexAt(offsets: readonly number[], offset: number): numb
   return low;
 }
 
-export function virtualRange(offsets: readonly number[], top: number, height: number, overscan = 6) {
+export function virtualRange(offsets: readonly number[], top: number, height: number, overscan = 3) {
   const count = offsets.length - 1;
   if (!count || top > offsets[count] + height || top + height < -height) return { start: 0, end: 0 };
   const start = Math.max(0, virtualIndexAt(offsets, top) - overscan);

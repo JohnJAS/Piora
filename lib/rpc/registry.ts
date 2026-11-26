@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSessionServices } from "@earendil-works/pi-coding-agent";
+import { invalidateExtensionLoadPlanCache } from "../extension-config";
 import type { NativeMcpController } from "../native-mcp";
 import type { ToolInfo } from "../pi-types";
 import type { ProjectToolSettingsRecord } from "../project-tool-settings";
@@ -36,6 +37,7 @@ export function getServicesCache(): Map<string, AgentSessionServices> {
 /** Drop cached per-cwd services so the next session start reloads them. */
 export function invalidateServicesCache(): void {
   getServicesCache().clear();
+  invalidateExtensionLoadPlanCache();
 }
 
 /** Refresh settings only: running streams keep their captured timeout and tools. */

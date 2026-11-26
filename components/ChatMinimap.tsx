@@ -90,9 +90,9 @@ export const ChatMinimap = memo(function ChatMinimap({ messages, scrollContainer
     if (scrollEl.firstElementChild) observer.observe(scrollEl.firstElementChild);
     const mutation = new MutationObserver(schedule);
     mutation.observe(scrollEl, { childList: true, subtree: true });
-    update();
+    schedule();
     return () => { observer.disconnect(); mutation.disconnect(); scrollEl.removeEventListener("scroll", schedule); if (frame) cancelAnimationFrame(frame); };
-  }, [scrollContainer, users.length, visible]);
+  }, [scrollContainer, users.length]);
   useEffect(() => { if ((previewOpen || previewPinned) && users.length) previewHandle.current?.scrollToKey(String(activeIndex)); }, [activeIndex, previewOpen, previewPinned, users.length]);
   useEffect(() => () => { clearTimeout(hideTimer.current); }, []);
   useLayoutEffect(() => {

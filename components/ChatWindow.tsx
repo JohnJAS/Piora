@@ -252,7 +252,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   });
   const sessionBusy = agentRunning || bashRunning;
   const sessionReadOnly = loading || sessionHydrating || Boolean(error);
-  const workflow = useWorkflow(session?.id ?? sessionIdRef.current, visible, sessionBusy, handleWorkflowAction, liveWorkflowSnapshot);
+  const workflow = useWorkflow(session?.id ?? sessionIdRef.current, visible, sessionBusy, handleWorkflowAction, liveWorkflowSnapshot, sessionHydrating);
   const [replaceGoalRequest, setReplaceGoalRequest] = useState<{ inlineObjective?: string } | null>(null);
   const [pausedGoalSubmission, setPausedGoalSubmission] = useState<PausedGoalPendingSubmission | null>(null);
   const currentWorkflowRun = workflow.snapshot?.current ?? null;
@@ -948,7 +948,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
         </div>
       )}
 
-      <BrowserHandoffNotice sessionId={session?.id} busy={sessionBusy} onWaitingChange={setBrowserWaiting} />
+      <BrowserHandoffNotice sessionId={session?.id} busy={sessionBusy} deferInitialFetch={sessionHydrating} onWaitingChange={setBrowserWaiting} />
       {extensionDialog && extensionDialog.method !== "request_user_input" ? (
         <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />
       ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, memo, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { requestGitStatus } from "@/lib/git-status-client";
 import {
   encodeFilePathForApi,
@@ -44,7 +44,7 @@ export type { FileExplorerHandle } from "./file-explorer/shared";
 
 const fetchGitStatus = requestGitStatus;
 
-export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(function FileExplorer({
+export const FileExplorer = memo(forwardRef<FileExplorerHandle, FileExplorerProps>(function FileExplorer({
   cwd,
   selectedFilePath,
   onOpenFile,
@@ -552,4 +552,4 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       )}
     </div>
   );
-});
+}));

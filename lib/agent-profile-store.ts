@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { getRuntimeAgentDataDirectory, type RuntimeHomeEnvironment } from "./runtime-home.ts";
@@ -104,13 +104,32 @@ export function parseAgentProfileStore(raw: string): AgentProfileStore {
   return { version: STORE_VERSION, sessions };
 }
 
+interface CachedProfileStoreEntry {
+  mtimeNs: bigint;
+  size: bigint;
+  ino: bigint;
+  store: AgentProfileStore;
+}
+
+const profileStoreCache = new Map<string, CachedProfileStoreEntry>();
+
 export function readAgentProfileStore(path = getAgentProfileStorePath()): AgentProfileStore {
+  const key = resolve(path);
   try {
-    return parseAgentProfileStore(readFileSync(path, "utf8"));
+    const stat = statSync(key, { bigint: true });
+    const cached = profileStoreCache.get(key);
+    if (cached && cached.mtimeNs === stat.mtimeNs && cached.size === stat.size && cached.ino === stat.ino) {
+      return { version: cached.store.version, sessions: { ...cached.store.sessions } };
+    }
+    const store = parseAgentProfileStore(readFileSync(key, "utf8"));
+    profileStoreCache.set(key, { mtimeNs: stat.mtimeNs, size: stat.size, ino: stat.ino, store });
+    return { version: store.version, sessions: { ...store.sessions } };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      profileStoreCache.delete(key);
       return { version: STORE_VERSION, sessions: {} };
     }
+    profileStoreCache.delete(key);
     throw error;
   }
 }
@@ -196,6 +215,7 @@ export async function bindSessionAgentRuntimeProfile(
           const migrated: AgentProfileBinding = { profile: "normal", boundAt: new Date().toISOString() };
           store.sessions[sessionId] = migrated;
           writePrivateFileAtomicSync(path, `${JSON.stringify(store, null, 2)}\n`);
+          profileStoreCache.delete(resolve(path));
           return migrated;
         }
         throw new AgentProfileStoreError(
@@ -211,6 +231,7 @@ export async function bindSessionAgentRuntimeProfile(
     };
     store.sessions[sessionId] = binding;
     writePrivateFileAtomicSync(path, `${JSON.stringify(store, null, 2)}\n`);
+    profileStoreCache.delete(resolve(path));
     return binding;
   });
 }
