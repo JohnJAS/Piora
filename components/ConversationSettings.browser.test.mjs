@@ -78,30 +78,17 @@ test('one chat settings page preserves controls, legacy entries and searchable t
       return route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${css}body{margin:0}</style><div id="root"></div><script src="/bundle.js"></script>` });
     });
     await page.goto('https://chat-settings.test/');
-    await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor().catch(async error => { throw new Error(`${error.message}; renderer: ${errors.join('; ')}; visible: ${(await page.locator('body').innerText()).slice(0, 1500)}`); });
+    await page.getByRole('heading', { name: '指令与提示词', exact: true }).waitFor().catch(async error => { throw new Error(`${error.message}; renderer: ${errors.join('; ')}; visible: ${(await page.locator('body').innerText()).slice(0, 1500)}`); });
     assert.equal(await page.getByRole('button', { name: '对话与任务', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: /^(运行策略|提示词与标题|鸿蒙开发)$/ }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: '指令与提示词', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: /^(运行策略|鸿蒙开发)$/ }).count(), 0);
     assert.equal(await page.getByText('下一轮输入预测', { exact: true }).count(), 0);
-    const toggle = page.getByRole('switch', { name: '权限控制', exact: true });
-    await toggle.waitFor();
-    assert.equal(await toggle.isChecked(), true);
-    await page.locator('[data-permission-trigger]').waitFor();
-    await toggle.click();
-    await page.locator('[data-permission-trigger]').waitFor({ state: 'hidden' });
-    assert.equal(approvalsEnabled, false);
-    await page.reload();
-    await toggle.waitFor();
-    assert.equal(await toggle.isChecked(), false);
-    await toggle.click();
-    await page.locator('[data-permission-trigger]').waitFor();
-    assert.equal(approvalsEnabled, true);
-    const groups = await page.locator('[class*="settingsSectionHeading"]').allTextContents();
-    assert.deepEqual(groups, ['1. 消息输入与阅读', '2. 回复辅助', '3. 任务运行', '4. 权限控制', '5. 系统提示词与优化', '6. 自动标题']);
-    assert.equal(await toggle.locator('xpath=ancestor::*[contains(@class, "runtimeCards")]').count(), 0, 'permissions have their own section outside task execution');
-    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'general.runningStatusLabel', 'general.modelRetry', 'models.compaction', 'conversation.systemPrompt', 'conversation.runtimePrompt', 'conversation.promptOptimizer', 'conversation.titleModel']) {
-      assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available exactly once`);
+
+    for (const id of ['conversation.systemPrompt', 'conversation.runtimePrompt', 'conversation.promptOptimizer', 'conversation.titleModel']) {
+      assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available on prompts page`);
     }
     const runtimeCard = page.locator('[data-settings-id="conversation.runtimePrompt"]');
+    await runtimeCard.getByText('各扩展提示词开关', { exact: true }).click();
     const fileToolsSwitch = runtimeCard.getByRole('switch', { name: '文件工具引导（易冲突）', exact: true });
     await runtimeCard.locator('button[role="switch"][aria-label="文件工具引导（易冲突）"][aria-checked="false"]:not([disabled])').waitFor();
     await fileToolsSwitch.click();
@@ -112,9 +99,34 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await runtimeCard.locator('button[role="switch"][aria-label="内置浏览器说明"][aria-checked="false"]:not([disabled])').waitFor();
     assert.equal(runtimePrompt.extensions.browser, false);
     await page.reload();
-    await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
+    await page.getByRole('heading', { name: '指令与提示词', exact: true }).waitFor();
+    await page.locator('[data-settings-id="conversation.runtimePrompt"]').getByText('各扩展提示词开关', { exact: true }).click();
     await page.locator('[data-settings-id="conversation.runtimePrompt"] button[role="switch"][aria-label="内置浏览器说明"][aria-checked="false"]:not([disabled])').waitFor();
+
+    await page.getByRole('button', { name: '对话与任务', exact: true }).click();
+    await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
+    const toggle = page.getByRole('switch', { name: '权限控制', exact: true });
+    await toggle.waitFor();
+    assert.equal(await toggle.isChecked(), true);
+    await page.locator('[data-permission-trigger]').waitFor();
+    await toggle.click();
+    await page.locator('[data-permission-trigger]').waitFor({ state: 'hidden' });
+    assert.equal(approvalsEnabled, false);
+    await page.reload();
+    await page.getByRole('button', { name: '对话与任务', exact: true }).click();
+    await toggle.waitFor();
+    assert.equal(await toggle.isChecked(), false);
+    await toggle.click();
+    await page.locator('[data-permission-trigger]').waitFor();
+    assert.equal(approvalsEnabled, true);
+    const groups = await page.getByRole('main').locator('section > div > h3').allTextContents();
+    assert.deepEqual(groups, ['交互行为', '智能辅助', '执行与安全']);
+    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'conversation.answerLinks', 'conversation.replySuggestions', 'general.runningStatusLabel', 'models.fallback', 'general.modelRetry', 'models.compaction']) {
+      assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available on conversation page`);
+    }
+    await page.getByText('请求超时、重试与上下文压缩', { exact: true }).click();
     const compaction = page.locator('[data-settings-id="models.compaction"]');
+    await compaction.getByRole('button', { name: '自定义', exact: true }).click();
     const reserveInput = compaction.getByPlaceholder('随模型计算');
     const saveCompaction = compaction.getByRole('button', { name: '保存', exact: true });
     assert.equal(await reserveInput.inputValue(), '');
@@ -123,15 +135,14 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await saveCompaction.click();
     await compaction.getByRole('status').waitFor();
     assert.equal(reserve, 0);
-    await reserveInput.fill('');
-    await saveCompaction.click();
+    await compaction.getByRole('button', { name: '自动', exact: true }).click();
     await compaction.getByRole('status').waitFor();
     assert.equal(reserve, null);
-    assert.equal(await saveCompaction.isDisabled(), true);
     const autoScroll = page.getByRole('switch', { name: '自动跟随最新输出', exact: true });
     await autoScroll.click();
     assert.equal(await autoScroll.getAttribute('aria-checked'), 'false');
     await page.reload();
+    await page.getByRole('button', { name: '对话与任务', exact: true }).click();
     await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
     assert.equal(await autoScroll.getAttribute('aria-checked'), 'false', 'moving the setting preserves its saved value');
     await page.evaluate(() => window.openPage('modelRuntime'));
@@ -166,8 +177,11 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     requests.length = 0;
     await page.getByRole('button', { name: '数据与诊断', exact: true }).click();
     await page.getByRole('heading', { name: '数据与诊断', exact: true }).waitFor();
+    await page.getByText('F:/fixture/agent', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '更改目录…', exact: true }).click();
     await page.getByRole('textbox', { name: '目标数据目录', exact: true }).waitFor();
     assert.equal(await page.getByRole('textbox', { name: '目标数据目录', exact: true }).inputValue(), 'F:/fixture/agent');
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
     await page.locator('[data-settings-id="general.runtimeLog"]').getByText('F:/fixture/logs/runtime.log', { exact: true }).waitFor();
     await page.getByRole('heading', { name: '网页登录账户', exact: true }).waitFor();
     assert.equal(await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).isChecked(), true);

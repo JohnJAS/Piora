@@ -1,6 +1,6 @@
 export const SIDE_CHAT_MESSAGES_EN = {
   "laboratory.sideChat": "Side chat",
-  "laboratory.sideChatDescription": "Open parallel follow-up conversations beside the main thread, inherited from a safe snapshot without disrupting active work.",
+  "laboratory.sideChatDescription": "Open parallel follow-up threads beside the main conversation without interrupting active tasks.",
   "laboratory.sideChatDisableHelp": "Turning this off hides Side Chat controls and stops starting side conversations. Existing attached side chats stay saved under their parent conversations.",
   "laboratory.sideChatError": "Side Chat settings could not be saved or loaded.",
 
@@ -69,7 +69,7 @@ export const SIDE_CHAT_MESSAGES_EN = {
 
 export const SIDE_CHAT_MESSAGES_ZH: Record<keyof typeof SIDE_CHAT_MESSAGES_EN, string> = {
   "laboratory.sideChat": "侧边对话",
-  "laboratory.sideChatDescription": "在主对话旁开启并行追问窗口，从安全快照继承上下文，不打断主线任务的执行。",
+  "laboratory.sideChatDescription": "在主对话旁开启并行追问，从安全快照继承上下文，不打断主线执行。",
   "laboratory.sideChatDisableHelp": "关闭后将隐藏侧边对话入口并停止新建侧边对话；已保存的持久侧边对话仍会保留在所属主对话下。",
   "laboratory.sideChatError": "侧边对话设置无法加载或保存。",
 

@@ -122,6 +122,7 @@ export class WorkflowRuntime {
         if (!keepPausedGoal && !resumingPausedGoal) {
           settleActiveDuration(snapshot.current);
           snapshot.current.status = "cancelled"; snapshot.current.reason = "mode_changed";
+          delete snapshot.todoSteps;
         }
       }
       snapshot.mode = options.mode;
@@ -167,9 +168,9 @@ export class WorkflowRuntime {
         updatedAt: now,
         ...(snapshot.mode === "goal" ? { timeUsedMs: 0, activeSince: now } : {}),
       };
+      delete snapshot.todoSteps;
       if (snapshot.mode === "goal") {
         delete snapshot.completedGoal;
-        delete snapshot.todoSteps;
       }
       this.progressRevision = 0; this.toolEvidence.clear();
     });
@@ -224,6 +225,7 @@ export class WorkflowRuntime {
             run.reason = "user_exited";
           }
           snapshot.mode = "agent";
+          delete snapshot.todoSteps;
           this.autoContinuing = false;
           break;
         case "pause":
@@ -234,7 +236,7 @@ export class WorkflowRuntime {
           // A failed Goal still offers recovery or explicit cancellation in UI.
           if (terminal.has(run.status) && !(run.kind === "goal" && run.status === "failed")) throw new WorkflowError("This workflow has already ended");
           settleActiveDuration(run);
-          run.status = "cancelled"; run.reason = "user_cancelled"; snapshot.mode = "agent"; this.turnRunId = null; this.autoContinuing = false; break;
+          run.status = "cancelled"; run.reason = "user_cancelled"; snapshot.mode = "agent"; delete snapshot.todoSteps; this.turnRunId = null; this.autoContinuing = false; break;
         case "resume":
           if (!["paused", "waiting", "budget_exhausted", "failed"].includes(run.status)) throw new WorkflowError("This workflow cannot be resumed");
           this.requireModeTools(run.kind);
@@ -388,6 +390,7 @@ export class WorkflowRuntime {
         const now = Date.now();
         settleActiveDuration(run, now);
         run.completedAt = now;
+        delete snapshot.todoSteps;
         snapshot.completedGoal = {
           runId: run.id,
           objective: run.objective,
@@ -465,7 +468,7 @@ export class WorkflowRuntime {
     this.autoContinuing = false;
     this.change(({ snapshot }) => {
       const run = snapshot.current;
-      if (run?.kind === "plan" && run.status === "running" && snapshot.mode === "agent") { run.status = "completed"; run.reason = "execution_finished"; }
+      if (run?.kind === "plan" && run.status === "running" && snapshot.mode === "agent") { run.status = "completed"; run.reason = "execution_finished"; delete snapshot.todoSteps; }
       else if (run?.kind === "plan" && run.status === "planning") { run.status = "waiting"; run.reason = "planning_needs_input"; }
     });
   }

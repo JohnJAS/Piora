@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { NetworkProxyMode, NetworkProxySettings } from "@/lib/network-proxy";
-import { AliIcon } from "./AliIcon";
+import {
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+  SettingsSegmented,
+} from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import styles from "./NetworkProxySettings.module.css";
 
 const DEFAULT_DRAFT: NetworkProxySettings = {
@@ -49,11 +55,11 @@ export function NetworkProxySettings() {
     setResult(null);
   }, []);
 
-  const saveAndApply = useCallback(async (): Promise<NetworkProxySettings> => {
+  const saveAndApply = useCallback(async (nextDraft: NetworkProxySettings = draft): Promise<NetworkProxySettings> => {
     const response = await fetch("/api/network-proxy", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify(nextDraft),
     });
     if (!response.ok) throw new Error(await responseError(response));
     const settings = await response.json() as NetworkProxySettings;
@@ -64,12 +70,12 @@ export function NetworkProxySettings() {
     return settings;
   }, [draft, t]);
 
-  const run = useCallback(async (action: "save" | "test") => {
+  const run = useCallback(async (action: "save" | "test", nextDraft?: NetworkProxySettings) => {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      await saveAndApply();
+      await saveAndApply(nextDraft);
       if (action === "save") {
         setResult(t("networkProxy.saved"));
         return;
@@ -88,79 +94,81 @@ export function NetworkProxySettings() {
   const modes: NetworkProxyMode[] = ["system", "manual", "direct"];
 
   return (
-    <section className={styles.card} aria-labelledby="network-proxy-title">
-      <div className={styles.heading}>
-        <span className={styles.icon}><AliIcon name="earth" size={17} /></span>
-        <div>
-          <h3 id="network-proxy-title">{t("networkProxy.title")}</h3>
-          <p>{t("networkProxy.description")}</p>
-        </div>
-      </div>
-
-      <div className={styles.modes} role="radiogroup" aria-label={t("networkProxy.mode") }>
-        {modes.map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            role="radio"
-            aria-checked={draft.mode === mode}
-            className={styles.mode}
-            data-selected={draft.mode === mode || undefined}
+    <SettingsPage
+      title={t("networkProxy.title")}
+      description={t("networkProxy.description")}
+      actions={
+        <button type="button" className={primitiveStyles.button} disabled={loading || busy} onClick={() => void run("test")}>
+          {busy ? t("networkProxy.applying") : t("networkProxy.test")}
+        </button>
+      }
+    >
+      <SettingsSection>
+        <SettingsRow
+          title={t("networkProxy.mode")}
+          description={t(`networkProxy.mode.${draft.mode}Description`)}
+        >
+          <SettingsSegmented
+            value={draft.mode}
             disabled={loading || busy}
-            onClick={() => update({ mode })}
-          >
-            <strong>{t(`networkProxy.mode.${mode}`)}</strong>
-            <span>{t(`networkProxy.mode.${mode}Description`)}</span>
-          </button>
-        ))}
-      </div>
+            ariaLabel={t("networkProxy.mode")}
+            options={modes.map((mode) => ({ value: mode, label: t(`networkProxy.mode.${mode}`) }))}
+            onChange={(mode) => {
+              const next = { ...draft, mode };
+              setDraft(next);
+              setDirty(true);
+              setError(null);
+              setResult(null);
+              if (mode !== "manual") {
+                void run("save", next);
+              }
+            }}
+          />
+        </SettingsRow>
 
-      {draft.mode === "manual" ? (
-        <div className={styles.fields}>
-          <label>
-            <span>{t("networkProxy.address")}</span>
-            <input
-              type="url"
-              value={draft.proxyUrl}
-              disabled={loading || busy}
-              placeholder="http://127.0.0.1:7890"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              onChange={(event) => update({ proxyUrl: event.target.value })}
-            />
-          </label>
-          <label>
-            <span>{t("networkProxy.bypass")}</span>
-            <input
-              type="text"
-              value={draft.bypass}
-              disabled={loading || busy}
-              placeholder="localhost,127.0.0.1,*.company.local"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              onChange={(event) => update({ bypass: event.target.value })}
-            />
-            <small>{t("networkProxy.bypassHint")}</small>
-          </label>
-        </div>
-      ) : null}
+        {draft.mode === "manual" ? (
+          <div style={{ padding: "14px 16px 16px", display: "grid", gap: 12 }}>
+            <div className={styles.fields} style={{ marginTop: 0 }}>
+              <label>
+                <span>{t("networkProxy.address")}</span>
+                <input
+                  type="url"
+                  value={draft.proxyUrl}
+                  disabled={loading || busy}
+                  placeholder="http://127.0.0.1:7890"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) => update({ proxyUrl: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>{t("networkProxy.bypass")}</span>
+                <input
+                  type="text"
+                  value={draft.bypass}
+                  disabled={loading || busy}
+                  placeholder="localhost,127.0.0.1,*.company.local"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) => update({ bypass: event.target.value })}
+                />
+                <small>{t("networkProxy.bypassHint")}</small>
+              </label>
+            </div>
+            <div className={primitiveStyles.compactFooter}>
+              <span />
+              <button type="button" className={primitiveStyles.buttonPrimary} disabled={loading || busy || !dirty} onClick={() => void run("save")}>
+                {busy ? t("networkProxy.applying") : t("networkProxy.save")}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
-      {error ? <div className={styles.error} role="alert">{error}</div> : null}
-      {result ? <div className={styles.success} role="status">{result}</div> : null}
-
-      <div className={styles.footer}>
-        <p><AliIcon name="info" size={13} />{t("networkProxy.scope")}</p>
-        <div className={styles.actions}>
-          <button type="button" className={styles.secondary} disabled={loading || busy} onClick={() => void run("test")}>
-            {busy ? t("networkProxy.applying") : t("networkProxy.test")}
-          </button>
-          <button type="button" className={styles.primary} disabled={loading || busy || !dirty} onClick={() => void run("save")}>
-            {busy ? t("networkProxy.applying") : t("networkProxy.save")}
-          </button>
-        </div>
-      </div>
-    </section>
+        {error ? <div style={{ padding: "10px 16px" }} className={primitiveStyles.statusError} role="alert">{error}</div> : null}
+        {result ? <div style={{ padding: "10px 16px" }} className={primitiveStyles.statusText} role="status">{result}</div> : null}
+      </SettingsSection>
+    </SettingsPage>
   );
 }

@@ -6,7 +6,7 @@ import styles from "./ArchivedChatsSettings.module.css";
 
 interface TrashItem { id: string; title: string; cwd: string; count: number; trashedAt: number; expiresAt: number }
 
-export function TrashSettings({ onChanged }: { onChanged?: () => void }) {
+export function TrashSettings({ embedded = false, onChanged }: { embedded?: boolean; onChanged?: () => void }) {
   const { t, locale } = useI18n();
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ export function TrashSettings({ onChanged }: { onChanged?: () => void }) {
   };
   const filtered = items.filter((item) => `${item.title} ${item.cwd}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <div className={styles.page} aria-busy={loading}>
-    <header className={styles.header}><div><h2>{t("trash.title")}</h2><p>{t("trash.description")}</p></div></header>
+    {!embedded ? <header className={styles.header}><div><h2>{t("trash.title")}</h2><p>{t("trash.description")}</p></div></header> : null}
     <label className={styles.search}><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label={t("trash.search")} placeholder={t("trash.search")} /></label>
     {restored && <p role="status" className={styles.restoredNotice}>{t("trash.restored", { title: restored.title })} <a href={`?session=${encodeURIComponent(restored.id)}`}>{t("trash.openConversation")}</a></p>}
     {error && <div className={styles.error} role="alert"><span>{t("trash.failed", { error })}</span><button onClick={() => void load()}>{t("archive.retry")}</button></div>}

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import { SettingsRow, SettingsSegmented, SettingsSwitch } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import styles from "./ModelRetrySettings.module.css";
 import settingsStyles from "./SettingsDialog.module.css";
 
@@ -65,7 +67,7 @@ async function responseError(response: Response): Promise<string> {
   return typeof payload.error === "string" ? payload.error : `HTTP ${response.status}`;
 }
 
-export function ModelRetrySettings() {
+export function ModelRetrySettings({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -93,8 +95,7 @@ export function ModelRetrySettings() {
     setResult(null);
   }, []);
 
-  const save = useCallback(async () => {
-    if (!draft) return;
+  const persist = useCallback(async (targetDraft: Draft) => {
     setBusy(true);
     setError(null);
     setResult(null);
@@ -102,7 +103,7 @@ export function ModelRetrySettings() {
       const response = await fetch("/api/models-config/retry", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(toPayload(draft)),
+        body: JSON.stringify(toPayload(targetDraft)),
       });
       if (!response.ok) throw new Error(await responseError(response));
       setDraft(toDraft(await response.json() as LoadedSettings));
@@ -113,7 +114,103 @@ export function ModelRetrySettings() {
     } finally {
       setBusy(false);
     }
-  }, [draft, t]);
+  }, [t]);
+
+  const save = useCallback(async () => {
+    if (!draft) return;
+    await persist(draft);
+  }, [draft, persist]);
+
+  if (compact) {
+    type PresetKey = "standard" | "resilient" | "off";
+    const PRESETS: Record<PresetKey, Draft> = {
+      standard: { enabled: true, maxRetries: "3", baseDelayMs: "1500", providerTimeout: "", idleTimeout: "120", providerRetries: "", providerDelay: "" },
+      resilient: { enabled: true, maxRetries: "6", baseDelayMs: "2000", providerTimeout: "180", idleTimeout: "180", providerRetries: "2", providerDelay: "15" },
+      off: { enabled: false, maxRetries: "0", baseDelayMs: "1000", providerTimeout: "", idleTimeout: "120", providerRetries: "0", providerDelay: "0" },
+    };
+    const activePreset: PresetKey | "" = draft
+      ? (["standard", "resilient", "off"] as const).find((key) => {
+        const p = PRESETS[key];
+        return p.enabled === draft.enabled && p.maxRetries === draft.maxRetries && p.baseDelayMs === draft.baseDelayMs
+          && p.providerTimeout === draft.providerTimeout && p.idleTimeout === draft.idleTimeout;
+      }) ?? ""
+      : "";
+    return (
+      <div style={{ display: "grid", gap: 14 }} aria-labelledby="model-retry-title">
+        <div className={primitiveStyles.compactFooter}>
+          <div>
+            <div id="model-retry-title" className={primitiveStyles.rowTitle}>{t("modelRetry.title")}</div>
+            <div className={primitiveStyles.rowDescription}>{t("modelRetry.description")}</div>
+          </div>
+          <SettingsSegmented
+            value={activePreset}
+            disabled={!draft || busy}
+            ariaLabel={t("modelRetry.title")}
+            options={[
+              { value: "standard", label: t("modelRetry.preset.standard") },
+              { value: "resilient", label: t("modelRetry.preset.resilient") },
+              { value: "off", label: t("modelRetry.preset.off") },
+            ]}
+            onChange={(next) => {
+              if (!next) return;
+              const nextDraft = PRESETS[next];
+              setDraft(nextDraft);
+              void persist(nextDraft);
+            }}
+          />
+        </div>
+        {draft ? (
+          <>
+            <SettingsRow title={t("modelRetry.enabled")} titleId="model-retry-enabled-label">
+              <SettingsSwitch
+                checked={draft.enabled}
+                disabled={busy}
+                label={t("modelRetry.enabled")}
+                onToggle={() => update({ enabled: !draft.enabled })}
+              />
+            </SettingsRow>
+            <div className={primitiveStyles.gridTwo}>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.maxRetries")}</span>
+                <input className={primitiveStyles.input} type="number" min={0} max={10} value={draft.maxRetries} disabled={busy} onChange={(event) => update({ maxRetries: event.target.value })} />
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.baseDelayMs")}</span>
+                <input className={primitiveStyles.input} type="number" min={100} max={60000} value={draft.baseDelayMs} disabled={busy} onChange={(event) => update({ baseDelayMs: event.target.value })} />
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.providerTimeout")}</span>
+                <input className={primitiveStyles.input} type="number" min={1} max={3600} step={1} value={draft.providerTimeout} disabled={busy} onChange={(event) => update({ providerTimeout: event.target.value })} />
+                <span className={primitiveStyles.fieldHint}>{t("modelRetry.providerTimeoutHint")}</span>
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.idleTimeout")}</span>
+                <input className={primitiveStyles.input} type="number" min={0} max={3600} step={1} value={draft.idleTimeout} disabled={busy} onChange={(event) => update({ idleTimeout: event.target.value })} />
+                <span className={primitiveStyles.fieldHint}>{t("modelRetry.idleTimeoutHint")}</span>
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.providerRetries")}</span>
+                <input className={primitiveStyles.input} type="number" min={0} max={5} value={draft.providerRetries} disabled={busy} onChange={(event) => update({ providerRetries: event.target.value })} />
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("modelRetry.providerDelay")}</span>
+                <input className={primitiveStyles.input} type="number" min={0} max={300} step={1} value={draft.providerDelay} disabled={busy} onChange={(event) => update({ providerDelay: event.target.value })} />
+              </label>
+            </div>
+            <div className={primitiveStyles.compactFooter}>
+              <div>
+                {error ? <span className={primitiveStyles.statusError} role="alert">{error}</span> : null}
+                {result ? <span className={primitiveStyles.statusText} role="status">{result}</span> : null}
+              </div>
+              <button type="button" className={primitiveStyles.buttonPrimary} disabled={!draft || busy || !dirty} onClick={() => void save()}>
+                {busy ? t("modelRetry.applying") : t("modelRetry.save")}
+              </button>
+            </div>
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <section className={styles.card} aria-labelledby="model-retry-title">

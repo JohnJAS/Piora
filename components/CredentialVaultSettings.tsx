@@ -66,7 +66,7 @@ export function CredentialVaultSettings({ browserPage = false, importPasswords }
       <label className={browserStyles.passwordSearch}><AliIcon name="search" size={16}/><input type="search" aria-label={copy("搜索密码", "Search passwords")} placeholder={copy("搜索密码", "Search passwords")} value={search} onChange={event => {setSearch(event.target.value); if (event.target.value) setTab("passwords");}} /></label>
     </>}
     {!browserPage && <h3>{copy("网页登录账户", "Website accounts")}</h3>}
-    {!browserPage && <p>{copy("成功登录后默认加密记住账户并自动登录，无需解锁。解锁凭据库后可管理详情、手动添加账户并备份。验证码仍需你完成。", "Successful sign-ins are remembered with encryption and used automatically without unlocking. Unlock the vault to manage details, add accounts and create backups. Verification codes remain manual.")}</p>}
+    {!browserPage && <p>{copy("登录后默认加密保存账户并自动登录；解锁凭据库可管理详情与加密备份。", "Remembered sign-ins stay encrypted and sign in automatically. Unlock the vault for manual editing and backups.")}</p>}
     {!state.available && <p role="status">{copy("系统加密不可用，无法保存网页登录账户。", "System encryption is unavailable; website accounts cannot be saved.")}</p>}
     {browserPage && tab === "settings" && <div className={browserStyles.settingsRows}>
       <label className={browserStyles.option}><span>{copy("自动保存网页登录账户并自动登录", "Remember website accounts and sign in automatically")}<small>{copy("在支持的网站登录成功后，加密保存账户供下次使用。", "Save accounts locally after signing in to supported sites.")}</small></span>
@@ -111,7 +111,7 @@ export function CredentialVaultSettings({ browserPage = false, importPasswords }
     {(!browserPage || tab === "settings") && <div className={browserPage ? browserStyles.advanced : undefined}>
     <details data-settings-id="data.credentialVault" open={managerOpen} onToggle={event => setManagerOpen(event.currentTarget.open)}>
       <summary>{copy("凭据库（本地加密）", "Credential vault (locally encrypted)")}</summary>
-      <p>{copy("主密码至少 12 位，解锁持续 10 分钟。密码始终遮盖，编辑时留空保留原密码。备份包含手动及自动记住的账户，使用主密码加密；导入后自动登录默认关闭。", "Use a master password of at least 12 characters; unlock lasts 10 minutes. Passwords stay masked; leave the password empty when editing to keep it. Backups include manual and remembered accounts, encrypted with the master password. Imported accounts have automatic sign-in disabled.")}</p>
+      <p>{copy("主密码至少 12 位，解锁持续 10 分钟；密码始终遮盖，导出备份同样使用主密码加密。", "Master password requires 12+ characters and unlocks for 10 minutes. Backups are encrypted with the same password.")}</p>
       <fieldset disabled={busy || !state.available}>
         <label>{copy("主密码（导入时填写备份密码）", "Master password (backup password for import)")}<input type="password" autoComplete="off" value={password} onChange={event => setPassword(event.target.value)} /></label>
         {!state.unlocked ? <button type="button" disabled={password.length < 12} onClick={() => { void request({ action: state.initialized ? "unlock" : "initialize", password }); }}>{state.initialized ? copy("解锁", "Unlock") : copy("创建凭据库", "Create vault")}</button> : <>
@@ -139,7 +139,7 @@ export function CredentialVaultSettings({ browserPage = false, importPasswords }
 
     <details data-settings-id="data.credentialWhitelist">
       <summary>{copy("HTTP 站点白名单", "HTTP site allowlist")}</summary>
-      <p>{copy("HTTP 连接不会加密传输密码。仅为信任的站点添加完整 origin（http://主机:端口），不支持通配符，最多 50 项。移除后停止该站点的凭据填写和自动保存。", "HTTP sends passwords without transport encryption. Add only a trusted site's exact origin (http://host:port), without wildcards, up to 50 sites. Removing a site stops credential filling and automatic saving for it.")}</p>
+      <p>{copy("仅对明确信任的精确 HTTP origin（http://主机:端口）允许凭据保存与填写，最多 50 项。", "Allow saving and filling only on explicitly trusted exact HTTP origins (http://host:port), up to 50 entries.")}</p>
       <fieldset disabled={busy || !state.available}>
         <label>{copy("允许保存凭据的 HTTP origin", "HTTP origin allowed for credentials")}<input type="url" placeholder="http://intranet.example:8080" value={httpOrigin} onChange={event => setHttpOrigin(event.target.value)} /></label>
         <button type="button" disabled={!httpOrigin.trim() || (state.httpOrigins?.length ?? 0) >= 50} onClick={() => { void request({ action: "http-allow", url: httpOrigin.trim() }).then(ok => { if (ok) setHttpOrigin(""); }); }}>{copy("允许此 HTTP 站点保存和填写账户", "Allow credential saving and filling for this HTTP site")}</button>
@@ -149,7 +149,7 @@ export function CredentialVaultSettings({ browserPage = false, importPasswords }
 
     <details data-settings-id="data.credentialSso">
       <summary>{copy("SSO 登录成功规则", "SSO sign-in completion rules")}</summary>
-      <p>{copy("将认证站点与业务回跳地址关联，密码只绑定认证站点。默认检查退出按钮或用户菜单；也可指定业务页面标记或由你确认的会话 Cookie 名称。Cookie 必须在本次登录中发生变化，其值不会显示。HTTP 地址须先加入白名单。", "Associate an authentication site with its business return address; credentials remain bound to the authentication site. By default, check sign-out or user-menu markers. You may select a page marker or a session cookie name you recognize. The cookie must change during this sign-in; its value is never displayed. Allowlist HTTP sites first.")}</p>
+      <p>{copy("关联认证站点与回跳地址以判断登录完成，默认检查退出按钮或用户菜单。", "Associate authentication origins with return URLs to detect completed SSO sign-ins.")}</p>
       <fieldset disabled={busy || !state.available}>
         <ul>{state.ssoRules?.map(item => <li key={item.id}>
           <span>{item.authOrigin} → {item.returnUrl}</span>

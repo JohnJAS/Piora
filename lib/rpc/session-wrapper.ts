@@ -9,7 +9,7 @@ import { mergeCommandOutputDetails } from "../command-execution";
 import type { NativeMcpController } from "../native-mcp";
 import type { AgentSessionLike, ExtensionUiContextLike } from "../pi-types";
 import type { ProjectToolSettingsRecord } from "../project-tool-settings";
-import { beginPromptFileChanges, finishPromptFileChanges } from "../prompt-file-changes";
+import { beginPromptFileChanges, finishPromptFileChanges, recordPromptFileTouch } from "../prompt-file-changes";
 import { PromptInputEnrichment } from "../prompt-input-enrichment";
 import type { PromptMaterialReference } from "../prompt-material-format";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences } from "../prompt-materials";
@@ -578,6 +578,9 @@ export class AgentSessionWrapper {
         const toolName = typeof event.toolName === "string" ? event.toolName : "";
         if (toolCallId && toolName) {
           this.runtimeToolCalls.set(toolCallId, { toolName, args: event.args });
+        }
+        if ((toolName === "write" || toolName === "edit") && typeof (event.args as { path?: unknown } | undefined)?.path === "string") {
+          void recordPromptFileTouch(this.sessionId, (event.args as { path: string }).path, this.cwd);
         }
       }
       if (event.type === "tool_execution_update") {

@@ -41,7 +41,9 @@
 .runNotice { background: var(--bg-hover); }
 .runFile { display: flex; align-items: center; gap: 6px; width: calc(100% - 10px); margin: 2px 5px; padding: 7px 6px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); cursor: pointer; font: inherit; text-align: left; }
 .runFile:hover,.runFile:focus-visible { background: var(--bg-hover); }
-.runFile span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runFileCopy { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.runFileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runFileDir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: calc(var(--text-xs) * 0.9); }
 .runFile small { color: var(--text-muted); white-space: nowrap; }
 .fileTreeSplitter { grid-column: 2; position: relative; z-index: 2; cursor: col-resize; touch-action: none; background: color-mix(in srgb, var(--border) 55%, transparent); }
 .fileTreeSplitter::after { content: ""; position: absolute; top: 50%; left: 50%; height: 32px; width: 2px; transform: translate(-50%, -50%); border-radius: 2px; background: var(--text-dim); }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { PromptFileChanges } from "@/lib/prompt-file-changes";
 import { pollVisibleDocument } from "@/lib/visible-poller";
@@ -13,16 +13,19 @@ export interface FloatingStepProgressPillProps {
   sessionId?: string | null;
   running?: boolean;
   onOpenChanges?: () => void;
+  autoDismissMs?: number;
 }
 
 const DONUT_RADIUS = 6;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+const DEFAULT_AUTO_DISMISS_MS = 4_000;
 
 export function FloatingStepProgressPill({
   steps,
   sessionId,
   running = false,
   onOpenChanges,
+  autoDismissMs = DEFAULT_AUTO_DISMISS_MS,
 }: FloatingStepProgressPillProps) {
   const { t } = useI18n();
   const popoverId = useId();
@@ -30,11 +33,42 @@ export function FloatingStepProgressPill({
   const [pinnedOpen, setPinnedOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [changedFileCount, setChangedFileCount] = useState(0);
+  const [dismissedSignature, setDismissedSignature] = useState<string | null>(null);
 
+  const stepsSignature = useMemo(
+    () => `${sessionId ?? ""}:${steps.map((step) => `${step.id}:${step.status}:${step.label}`).join("|")}`,
+    [sessionId, steps],
+  );
+  const dismissed = dismissedSignature === stepsSignature;
+  const visible = steps.length > 0 && !dismissed;
+  const allDone = steps.length > 0 && steps.every((step) => step.status === "completed");
   const open = pinnedOpen || hovered;
 
+  const handleDismiss = useCallback(() => {
+    setPinnedOpen(false);
+    setHovered(false);
+    setDismissedSignature(stepsSignature);
+  }, [stepsSignature]);
+
   useEffect(() => {
-    if (!sessionId || steps.length === 0) {
+    if (!visible) {
+      setPinnedOpen(false);
+      setHovered(false);
+    }
+  }, [visible, sessionId]);
+
+  useEffect(() => {
+    if (!visible || !allDone || running || open || autoDismissMs <= 0) return;
+    const timer = window.setTimeout(() => {
+      setPinnedOpen(false);
+      setHovered(false);
+      setDismissedSignature(stepsSignature);
+    }, autoDismissMs);
+    return () => window.clearTimeout(timer);
+  }, [visible, allDone, running, open, autoDismissMs, stepsSignature]);
+
+  useEffect(() => {
+    if (!sessionId || !visible) {
       setChangedFileCount(0);
       return;
     }
@@ -59,7 +93,7 @@ export function FloatingStepProgressPill({
       controller.abort();
       poller?.stop();
     };
-  }, [sessionId, running, steps.length]);
+  }, [sessionId, running, visible]);
 
   useEffect(() => {
     if (!pinnedOpen) return;
@@ -77,12 +111,11 @@ export function FloatingStepProgressPill({
     };
   }, [pinnedOpen]);
 
-  if (!steps.length) return null;
+  if (!visible) return null;
 
   const total = steps.length;
   const completedCount = steps.filter((step) => step.status === "completed").length;
   const inProgressIndex = steps.findIndex((step) => step.status === "in_progress");
-  const allDone = completedCount === total;
   const activeStep = inProgressIndex >= 0
     ? steps[inProgressIndex]
     : steps.find((step) => step.status === "pending") ?? steps[total - 1];
@@ -113,7 +146,19 @@ export function FloatingStepProgressPill({
         >
           <div className={styles.stepPopoverHeader}>
             <span>{t("workflow.steps.popoverTitle")}</span>
-            <span className={styles.stepPillCount}>{completedCount} / {total}</span>
+            <span className={styles.stepPopoverHeaderMeta}>
+              <span className={styles.stepPillCount}>{completedCount} / {total}</span>
+              <button
+                type="button"
+                className={styles.stepPillDismissBtn}
+                data-testid="step-progress-popover-dismiss"
+                title={t("workflow.steps.dismiss")}
+                aria-label={t("workflow.steps.dismiss")}
+                onClick={handleDismiss}
+              >
+                <AliIcon name="close" size={11} />
+              </button>
+            </span>
           </div>
           <ol className={styles.stepPopoverList}>
             {steps.map((step) => (
@@ -183,6 +228,17 @@ export function FloatingStepProgressPill({
             </button>
           </>
         )}
+
+        <button
+          type="button"
+          className={styles.stepPillDismissBtn}
+          data-testid="step-progress-dismiss"
+          title={t("workflow.steps.dismiss")}
+          aria-label={t("workflow.steps.dismiss")}
+          onClick={handleDismiss}
+        >
+          <AliIcon name="close" size={11} />
+        </button>
       </div>
     </div>
   );

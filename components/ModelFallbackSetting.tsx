@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { ModelErrorText } from "./ModelErrorText";
+import { SettingsRow, SettingsSwitch } from "./settings/SettingsPrimitives";
 import styles from "./SettingsDialog.module.css";
 
-export function ModelFallbackSetting() {
+export function ModelFallbackSetting({ inline = false }: { inline?: boolean }) {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -35,6 +36,29 @@ export function ModelFallbackSetting() {
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   };
+  if (inline) {
+    return (
+      <SettingsRow
+        title={t("models.fallback.title")}
+        description={
+          <>
+            {t("models.fallback.description")}
+            {error ? <p role="alert" style={{ color: "var(--error, #dc2626)", margin: "4px 0 0" }}><ModelErrorText value={error} /></p> : null}
+          </>
+        }
+        settingsId="models.fallback"
+        descriptionId="ModelFallbackSetting-description"
+      >
+        <SettingsSwitch
+          checked={enabled}
+          disabled={busy}
+          label={t("models.fallback.title")}
+          describedBy="ModelFallbackSetting-description"
+          onToggle={() => void toggle()}
+        />
+      </SettingsRow>
+    );
+  }
   return <section className={styles.conversationSection} data-settings-id="models.fallback">
     <div className={styles.conversationRow}>
       <div className={styles.conversationCopy}>

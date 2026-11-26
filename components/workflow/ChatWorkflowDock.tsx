@@ -119,9 +119,14 @@ export function ChatWorkflowDock({
   }, [replaceGoalRequest, onAction, onClearReplaceGoalRequest, onEnterGoalDraft]);
 
   const currentRun = snapshot?.current ?? null;
-  const todoSteps = snapshot?.todoSteps?.length
-    ? snapshot.todoSteps
-    : currentRun?.steps ?? [];
+  const isTerminalRun = currentRun?.status === "completed" || currentRun?.status === "cancelled";
+  const todoSteps = isTerminalRun && !running
+    ? []
+    : snapshot?.todoSteps?.length
+      ? snapshot.todoSteps
+      : !isTerminalRun
+        ? currentRun?.steps ?? []
+        : [];
 
   return (
     <>

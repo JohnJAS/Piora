@@ -9,6 +9,9 @@ const agentSession = readFileSync(new URL("../hooks/useAgentSession.ts", import.
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const settingsDialog = readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
 const settingsCss = readFileSync(new URL("./SettingsDialog.module.css", import.meta.url), "utf8");
+const conversationPage = readFileSync(new URL("./settings/ConversationSettingsPage.tsx", import.meta.url), "utf8");
+const promptsPage = readFileSync(new URL("./settings/PromptsSettingsPage.tsx", import.meta.url), "utf8");
+const chatStoragePage = readFileSync(new URL("./settings/ChatStorageSettingsPage.tsx", import.meta.url), "utf8");
 const archivedChats = readFileSync(new URL("./ArchivedChatsSettings.tsx", import.meta.url), "utf8");
 const projectTools = readFileSync(new URL("./ProjectToolsConfig.tsx", import.meta.url), "utf8");
 const settingsPages = readFileSync(new URL("../lib/settings-search.ts", import.meta.url), "utf8");
@@ -16,9 +19,10 @@ const settingsPages = readFileSync(new URL("../lib/settings-search.ts", import.m
 test("keeps conversation metadata and notifications out of the composer", () => {
   assert.doesNotMatch(chatInput, /TOOL_PRESETS|toolDropdown|soundEnabled|onAudioUnlock/);
   assert.match(settingsPages, /key:\s*"conversation"/);
-  assert.match(settingsDialog, /settings\.sessionTitlePromptTitle/);
-  assert.match(settingsDialog, /writeSessionTitlePrompt/);
-  assert.match(settingsDialog, /conversation\.onNotificationToggle/);
+  assert.match(settingsPages, /key:\s*"prompts"/);
+  assert.match(promptsPage, /settings\.sessionTitlePromptTitle/);
+  assert.match(promptsPage, /writeSessionTitlePrompt/);
+  assert.match(conversationPage, /onNotificationToggle/);
   assert.doesNotMatch(settingsDialog, /taskControls\.preset/);
   assert.doesNotMatch(appShell, /model\.permissions/);
   assert.doesNotMatch(appShell, /topbar-more-button/);
@@ -29,6 +33,8 @@ test("automatically optimizes an unnamed session title after a completed turn", 
   assert.match(appShell, /readSessionTitlePrompt\(window\.localStorage\)/);
   assert.match(appShell, /automaticTitleRequestsRef/);
   assert.match(appShell, /void optimizeUnnamedSessionTitle\(sessionId\)/);
+  assert.match(appShell, /extractEarlySessionTitleQuery\(session\.firstMessage\)/);
+  assert.match(appShell, /void optimizeUnnamedSessionTitle\(session\.id, \{ seedQuery \}\)/);
   assert.match(appShell, /titleRunningSessionsRef/);
   assert.match(appShell, /window\.setInterval\(retry, 60_000\)/);
   assert.match(agentSession, /onAgentEnd\?\.\(sid\)/);
@@ -69,7 +75,9 @@ test("settings owns archived chats instead of rendering them in project lists", 
   assert.match(settingsPages, /key: "archived"/);
   assert.match(settingsPages, /settings\.group\.appData/);
   assert.match(settingsPages, /icon: "archive"/);
-  assert.match(appShell, /archived:\s*\([\s\S]*?<ArchivedChatsSettings/);
+  assert.match(appShell, /archived:\s*\([\s\S]*?<ChatStorageSettingsPage/);
+  assert.match(chatStoragePage, /<ArchivedChatsSettings/);
+  assert.match(chatStoragePage, /<TrashSettings/);
   assert.match(archivedChats, /Promise\.all\(\[/);
   assert.match(archivedChats, /flags\[session\.id\]\?\.archived/);
   assert.match(archivedChats, /archived: false/);
