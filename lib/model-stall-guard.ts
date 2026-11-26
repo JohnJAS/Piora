@@ -73,6 +73,10 @@ export function modelStallTimeoutMessage(kind: "first-event" | "idle", timeoutMs
     : `Model request timed out: the response stream stopped sending data for ${seconds} seconds. The connection may have died silently; the request can be retried.`;
 }
 
+export function modelStreamInterruptedMessage(): string {
+  return "Model response stream was interrupted: connection error — the provider closed the stream before finishing the response. The request can be retried.";
+}
+
 interface StreamOptionsLike {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -96,9 +100,9 @@ function emptyUsage(): AssistantMessage["usage"] {
   };
 }
 
-/** Build the timeout failure as a normal assistant error message. */
+/** Build the timeout or premature-EOF failure as a normal assistant error message. */
 export function modelStallTimeoutEvent(
-  kind: "first-event" | "idle",
+  kind: "first-event" | "idle" | "stream-interrupted",
   timeoutMs: number,
   context: { model?: unknown; partial?: AssistantMessage },
 ): AssistantMessageEvent {
@@ -112,7 +116,9 @@ export function modelStallTimeoutEvent(
     model: partial?.model ?? model?.id,
     usage: partial?.usage ?? emptyUsage(),
     stopReason: "error",
-    errorMessage: modelStallTimeoutMessage(kind, timeoutMs),
+    errorMessage: kind === "stream-interrupted"
+      ? modelStreamInterruptedMessage()
+      : modelStallTimeoutMessage(kind, timeoutMs),
     timestamp: Date.now(),
   } as unknown as AssistantMessage;
   return { type: "error", reason: "error", error: message };
@@ -242,8 +248,9 @@ export function guardAssistantStream(
         arm("idle", idleTimeoutMs);
       }
       // A well-behaved provider always terminates with done/error. If the stream
-      // object ends silently, fail loudly rather than leaving result() pending.
-      settleWith(modelStallTimeoutEvent("idle", idleTimeoutMs, { model: options.model, partial }));
+      // object ends silently, fail loudly rather than leaving result() pending,
+      // without misreporting an early disconnect as a full idle timeout.
+      settleWith(modelStallTimeoutEvent("stream-interrupted", 0, { model: options.model, partial }));
     } catch (error) {
       if (settled) return;
       if (userSignal?.aborted) {

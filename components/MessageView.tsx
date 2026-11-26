@@ -331,7 +331,7 @@ function AssistantMessageView({
   const providerErrorDetail = providerError ? summarizeProviderError(providerError) : null;
   const timeout = providerError ? modelTimeoutDisplay(providerError) : null;
   const providerErrorSummary = timeout
-    ? t(timeout.key, { seconds: timeout.seconds })
+    ? t(timeout.key, "seconds" in timeout ? { seconds: timeout.seconds } : undefined)
     : providerErrorDetail?.code === "model_output_budget"
       ? t("chat.modelOutputBudgetError")
       : providerErrorDetail?.summary ?? "";

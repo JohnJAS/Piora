@@ -1207,7 +1207,7 @@ function NoticeShelf({ notices, floating = false, align = "left" }: { notices: N
           >
             <AliIcon name={notice.type === "error" || notice.type === "warning" ? "warning" : notice.type === "success" ? "check" : "info"} size={13} className="notice-shelf-icon" />
             <span className="notice-shelf-message">
-              {timeout ? t(timeout.key, { seconds: timeout.seconds }) : notice.message}
+              {timeout ? t(timeout.key, "seconds" in timeout ? { seconds: timeout.seconds } : undefined) : notice.message}
             </span>
           </div>
         );
