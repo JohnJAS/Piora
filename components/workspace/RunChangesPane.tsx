@@ -19,6 +19,8 @@ interface RunChangesPaneProps {
   children: ReactNode;
 }
 
+const MAX_SETTLEMENT_READS = 30;
+
 /** Isolates per-run change polling from FileExplorer and FileViewer renders. */
 export const RunChangesPane = memo(function RunChangesPane({
   active,
@@ -47,25 +49,32 @@ export const RunChangesPane = memo(function RunChangesPane({
         if (!response.ok) return;
         const data = await response.json() as PromptFileChanges | null;
         if (!cancelled && !signal.aborted) setRunChanges(data);
+        return data;
       } catch {
         if (!cancelled && !signal.aborted) setRunChanges(null);
       }
     };
-    const controller = new AbortController();
     let polling: ReturnType<typeof pollVisibleDocument> | null = null;
     let deferTimer: ReturnType<typeof setTimeout> | undefined;
+    let unsettled = false;
+    let settlementReads = 0;
     const start = () => {
       if (cancelled) return;
-      const pollMs = fileNavMode === "run" ? 2500 : 5000;
-      polling = sessionRunning ? pollVisibleDocument(load, pollMs) : null;
-      if (!polling) void load(controller.signal);
+      const pollMs = sessionRunning ? (fileNavMode === "run" ? 2500 : 5000) : 1000;
+      polling = pollVisibleDocument(async (signal) => {
+        const snapshot = await load(signal);
+        if (sessionRunning || signal.aborted) return;
+        // The agent can become idle before the workspace snapshot is persisted.
+        // Keep reading only when a run actually needs to reach its final state.
+        if (snapshot !== undefined) unsettled = snapshot?.status === "running";
+        if (!unsettled || ++settlementReads >= MAX_SETTLEMENT_READS) polling?.stop();
+      }, pollMs);
     };
     if (fileNavMode === "run") start();
     else deferTimer = setTimeout(start, 200);
     return () => {
       cancelled = true;
       if (deferTimer !== undefined) clearTimeout(deferTimer);
-      controller.abort();
       polling?.stop();
     };
   }, [active, sessionId, sessionRunning, refreshKey, fileNavMode]);
