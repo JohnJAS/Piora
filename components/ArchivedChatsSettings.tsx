@@ -12,6 +12,7 @@ import { AliIcon } from "./AliIcon";
 import styles from "./ArchivedChatsSettings.module.css";
 
 interface Props {
+  embedded?: boolean;
   onChanged?: () => void;
   onSessionDeleted?: (session: SessionInfo, sessionIds?: string[]) => void;
 }
@@ -49,7 +50,7 @@ function archivedGroups(sessions: SessionInfo[]): ArchivedGroup[] {
     });
 }
 
-export function ArchivedChatsSettings({ onChanged, onSessionDeleted }: Props) {
+export function ArchivedChatsSettings({ embedded = false, onChanged, onSessionDeleted }: Props) {
   const { locale, t } = useI18n();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,16 +191,18 @@ export function ArchivedChatsSettings({ onChanged, onSessionDeleted }: Props) {
 
   return (
     <div className={styles.page} aria-busy={loading || deletingAll}>
-      <header className={styles.header}>
-        <div>
-          <h2>{t("archive.title")}</h2>
-          <p>{t("archive.description")}</p>
-        </div>
-        <button className={styles.deleteAllButton} type="button" disabled={sessions.length === 0 || deletingAll} onClick={() => void deleteAll()}>
-          <AliIcon name="delete" size={14} />
-          {deletingAll ? t("archive.deleting") : t("archive.deleteAll")}
-        </button>
-      </header>
+      {!embedded ? (
+        <header className={styles.header}>
+          <div>
+            <h2>{t("archive.title")}</h2>
+            <p>{t("archive.description")}</p>
+          </div>
+          <button className={styles.deleteAllButton} type="button" disabled={sessions.length === 0 || deletingAll} onClick={() => void deleteAll()}>
+            <AliIcon name="delete" size={14} />
+            {deletingAll ? t("archive.deleting") : t("archive.deleteAll")}
+          </button>
+        </header>
+      ) : null}
 
       <div className={styles.toolbar}>
         <label className={styles.search}>
@@ -213,6 +216,12 @@ export function ArchivedChatsSettings({ onChanged, onSessionDeleted }: Props) {
             {allGroups.map((group) => <option key={group.projectRoot} value={group.projectRoot}>{group.label}</option>)}
           </select>
         </label>
+        {embedded ? (
+          <button className={styles.deleteAllButton} type="button" disabled={sessions.length === 0 || deletingAll} onClick={() => void deleteAll()}>
+            <AliIcon name="delete" size={14} />
+            {deletingAll ? t("archive.deleting") : t("archive.deleteAll")}
+          </button>
+        ) : null}
       </div>
 
       {error ? (

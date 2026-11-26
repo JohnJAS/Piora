@@ -11,7 +11,7 @@ const sidebarSource = [
   await readFile(new URL("../SessionSidebar.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./SidebarFooter.tsx", import.meta.url), "utf8"),
 ].join("\n");
-const settingsSource = await readFile(new URL("../SettingsDialog.tsx", import.meta.url), "utf8");
+const promptsSettingsSource = await readFile(new URL("../settings/PromptsSettingsPage.tsx", import.meta.url), "utf8");
 const sessionPrefetchSource = await readFile(new URL("../../lib/session-prefetch.ts", import.meta.url), "utf8");
 const appShellSource = await readFile(new URL("../AppShell.tsx", import.meta.url), "utf8");
 
@@ -67,8 +67,8 @@ test("allows title generation to be cancelled and chooses its model in settings"
   assert.match(rowSource, /titleOptimizationAbortRef\.current\?\.abort\(\)/);
   assert.match(rowSource, /signal: controller\.signal/);
   assert.match(rowSource, /optimizingTitle \? "close" : "sparkles"/);
-  assert.match(settingsSource, /settings\.sessionTitleModelTitle/);
-  assert.match(settingsSource, /writeSessionTitleModel/);
+  assert.match(promptsSettingsSource, /settings\.sessionTitleModelTitle/);
+  assert.match(promptsSettingsSource, /writeSessionTitleModel/);
   assert.match(appShellSource, /readSessionTitleModel\(window\.localStorage\)/);
 });
 

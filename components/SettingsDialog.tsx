@@ -1,49 +1,21 @@
 "use client";
-import { RunningStatusSettings } from "./RunningStatusSettings";
-import { AnswerLinkSettings } from "./AnswerLinkSettings";
-import { BrowserSettings } from "./BrowserSettings";
-import { LaboratorySettings } from "./LaboratorySettings";
-import { useRunningSendMode } from "@/hooks/useRunningSendMode";
-
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
-import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
-import { AliIcon, type AliIconName } from "./AliIcon";
-import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
-import { RuntimeLogSettings } from "./RuntimeLogSettings";
-import { CredentialVaultSettings } from "./CredentialVaultSettings";
-import { DesktopUpdateSourceSetting } from "./DesktopUpdateSourceSetting";
-import { DesktopUpdateScheduleSetting } from "./DesktopUpdateScheduleSetting";
-import { NetworkProxySettings } from "./NetworkProxySettings";
-import { ToolApprovalSettings } from "./ToolApprovalSettings";
-import { ModelRetrySettings } from "./ModelRetrySettings";
-import { ModelCompactionSettings } from "./ModelCompactionSettings";
-import { ModelFallbackSetting } from "./ModelFallbackSetting";
-import { ReplySuggestionsSettings } from "./ReplySuggestionsSettings";
-import { SystemPromptEditor } from "./SystemPromptEditor";
-import { RuntimePromptSettings } from "./RuntimePromptSettings";
-import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
-import {
-  readPromptOptimizerSystemPrompt,
-  readPromptOptimizerModel,
-  resetPromptOptimizerSystemPrompt,
-  writePromptOptimizerModel,
-  writePromptOptimizerSystemPrompt,
-} from "@/lib/prompt-optimizer-settings";
-import { SESSION_TITLE_PROMPT_MAX_LENGTH } from "@/lib/session-title-prompt";
 import { filterSettingsSearchItems, normalizeSettingsKey, SETTINGS_GROUPS, type SettingsKey } from "@/lib/settings-search";
-import {
-  SESSION_TITLE_PROMPT,
-  readSessionTitleModel,
-  readSessionTitlePrompt,
-  resetSessionTitleModel,
-  resetSessionTitlePrompt,
-  writeSessionTitleModel,
-  writeSessionTitlePrompt,
-  type SessionTitleModelPreference,
-} from "@/lib/session-title-settings";
+import { AliIcon, type AliIconName } from "./AliIcon";
+import { BrowserSettings } from "./BrowserSettings";
+import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
+import { DesktopUpdateScheduleSetting } from "./DesktopUpdateScheduleSetting";
+import { DesktopUpdateSourceSetting } from "./DesktopUpdateSourceSetting";
+import { LaboratorySettings } from "./LaboratorySettings";
+import { NetworkProxySettings } from "./NetworkProxySettings";
+import { ConversationSettingsPage } from "./settings/ConversationSettingsPage";
+import { DataSettingsPage } from "./settings/DataSettingsPage";
+import { PromptsSettingsPage } from "./settings/PromptsSettingsPage";
+import { SettingsPage, SettingsRow, SettingsSection } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import styles from "./SettingsDialog.module.css";
 
 interface Props {
@@ -65,24 +37,6 @@ interface Props {
   desktop: {
     available: boolean;
   };
-}
-
-interface TitleModelOption {
-  id: string;
-  name: string;
-  provider: string;
-}
-
-interface AgentDataDirectoryInfo {
-  currentDirectory: string;
-  defaultDirectory: string;
-  configuredBy: "default" | "settings" | "environment";
-  environmentOverride: boolean;
-  portableRuntimeDirectory?: string;
-}
-
-function titleModelValue(model: SessionTitleModelPreference): string {
-  return JSON.stringify(model);
 }
 
 export type { SettingsKey } from "@/lib/settings-search";
@@ -113,11 +67,6 @@ export function SettingsDialog({
   const { t } = useI18n();
   const normalizedKey = normalizeSettingsKey(requestedKey);
   const activeKey = normalizedKey === "data" && !desktop.available ? "general" : normalizedKey;
-  const { mode: runningSendMode, setMode: setRunningSendMode } = useRunningSendMode();
-  const {
-    enabled: liveOutputAutoScrollEnabled,
-    setEnabled: setLiveOutputAutoScrollEnabled,
-  } = useLiveOutputAutoScrollPreference();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [targetItem, setTargetItem] = useState<{ id: string } | null>(null);
@@ -158,29 +107,6 @@ export function SettingsDialog({
     const timeout = window.setTimeout(() => { observer.disconnect(); cleanupHighlight?.(); }, 8_000);
     return () => { observer.disconnect(); window.clearTimeout(timeout); cleanupHighlight?.(); };
   }, [activeKey, open, searchQuery, targetItem]);
-  const [optimizerPromptDraft, setOptimizerPromptDraft] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
-  const [optimizerPromptSaved, setOptimizerPromptSaved] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
-  const [optimizerPromptStatus, setOptimizerPromptStatus] = useState<"idle" | "saved" | "error">("idle");
-  const [optimizerModels, setOptimizerModels] = useState<Array<{ provider: string; id: string; name: string }>>([]);
-  const [optimizerModelValue, setOptimizerModelValue] = useState("");
-  useEffect(() => {
-    if (!open || activeKey !== "conversation") return;
-    const selected = readPromptOptimizerModel(window.localStorage);
-    setOptimizerModelValue(selected ? JSON.stringify(selected) : "");
-  }, [open, activeKey]);
-  const [titlePromptDraft, setTitlePromptDraft] = useState(SESSION_TITLE_PROMPT);
-  const [titlePromptSaved, setTitlePromptSaved] = useState(SESSION_TITLE_PROMPT);
-  const [titlePromptStatus, setTitlePromptStatus] = useState<"idle" | "saved" | "error">("idle");
-  const [titleModel, setTitleModel] = useState<SessionTitleModelPreference | null>(null);
-  const [titleModelOptions, setTitleModelOptions] = useState<TitleModelOption[]>([]);
-  const [titleModelsLoading, setTitleModelsLoading] = useState(false);
-  const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
-  const [agentDataInfo, setAgentDataInfo] = useState<AgentDataDirectoryInfo | null>(null);
-  const [agentDataDirectoryDraft, setAgentDataDirectoryDraft] = useState("");
-  const [migrateAgentData, setMigrateAgentData] = useState(false);
-  const [agentDataStatus, setAgentDataStatus] = useState<"idle" | "loading" | "applying" | "restarting" | "error">("idle");
-  const [agentDataErrorCode, setAgentDataErrorCode] = useState<string | null>(null);
-  const [agentDataErrorDetail, setAgentDataErrorDetail] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -192,191 +118,13 @@ export function SettingsDialog({
   }))), []);
 
   const availableEntries = useMemo(() => detailEntries.filter((entry) => entry.key === "data" || entry.key === "browser" ? desktop.available : (
-    ["general", "network", "conversation", "laboratory"].includes(entry.key)
+    ["general", "network", "conversation", "prompts", "laboratory"].includes(entry.key)
     || sections[entry.key] !== undefined
   )), [desktop.available, detailEntries, sections]);
 
   useEffect(() => {
     if (!open) setSearchQuery("");
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const saved = readPromptOptimizerSystemPrompt(window.localStorage);
-    setOptimizerPromptDraft(saved);
-    setOptimizerPromptSaved(saved);
-    setOptimizerPromptStatus("idle");
-    const selectedModel = readPromptOptimizerModel(window.localStorage);
-    setOptimizerModelValue(selectedModel ? JSON.stringify(selectedModel) : "");
-    const savedTitlePrompt = readSessionTitlePrompt(window.localStorage);
-    setTitlePromptDraft(savedTitlePrompt);
-    setTitlePromptSaved(savedTitlePrompt);
-    setTitlePromptStatus("idle");
-    setTitleModel(readSessionTitleModel(window.localStorage));
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || activeKey !== "conversation") return;
-    const controller = new AbortController();
-    void fetch("/api/models", { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: { modelList?: Array<{ provider: string; id: string; name: string }> } | null) => {
-        if (!controller.signal.aborted) setOptimizerModels(data?.modelList ?? []);
-      })
-      .catch(() => { if (!controller.signal.aborted) setOptimizerModels([]); });
-    return () => controller.abort();
-  }, [open, activeKey]);
-
-  useEffect(() => {
-    if (!open || activeKey !== "conversation") return;
-    const controller = new AbortController();
-    setTitleModelsLoading(true);
-    setTitleModelsError(null);
-    setTitleModelOptions([]);
-    const query = modelCwd ? `?cwd=${encodeURIComponent(modelCwd)}` : "";
-    void fetch(`/api/models${query}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const body = await response.json() as { modelList?: TitleModelOption[]; error?: string };
-        if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
-        setTitleModelOptions(body.modelList ?? []);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setTitleModelsError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setTitleModelsLoading(false);
-      });
-    return () => controller.abort();
-  }, [activeKey, modelCwd, open]);
-
-  useEffect(() => {
-    if (!open || activeKey !== "data" || !desktop.available) return;
-    const bridge = window.piDesktop?.getAgentDataDirectory;
-    if (!bridge) return;
-    let cancelled = false;
-    setAgentDataStatus("loading");
-    void bridge()
-      .then((info) => {
-        if (cancelled) return;
-        setAgentDataInfo(info);
-        setAgentDataDirectoryDraft(info?.currentDirectory ?? "");
-        setMigrateAgentData(false);
-        setAgentDataStatus("idle");
-        setAgentDataErrorCode(null);
-        setAgentDataErrorDetail(null);
-      })
-      .catch(() => {
-        if (!cancelled) setAgentDataStatus("error");
-      });
-    return () => { cancelled = true; };
-  }, [activeKey, desktop.available, open]);
-
-  const chooseAgentDataDirectory = async () => {
-    const selected = await window.piDesktop?.selectAgentDataDirectory?.(agentDataDirectoryDraft || agentDataInfo?.currentDirectory);
-    if (selected) {
-      setAgentDataDirectoryDraft(selected);
-      setAgentDataErrorCode(null);
-      setAgentDataErrorDetail(null);
-    }
-  };
-
-  const applyAgentDataDirectory = async () => {
-    const bridge = window.piDesktop?.applyAgentDataDirectory;
-    if (!bridge || !agentDataDirectoryDraft.trim()) return;
-    setAgentDataStatus("applying");
-    setAgentDataErrorCode(null);
-    setAgentDataErrorDetail(null);
-    try {
-      const result = await bridge({ directory: agentDataDirectoryDraft.trim(), migrate: migrateAgentData });
-      if (!result.ok) {
-        setAgentDataStatus("error");
-        setAgentDataErrorCode(result.code ?? "migration-failed");
-        setAgentDataErrorDetail(result.error?.trim() || null);
-        return;
-      }
-      const currentDirectory = result.currentDirectory ?? agentDataDirectoryDraft.trim();
-      setAgentDataInfo((current) => current ? {
-        ...current,
-        currentDirectory,
-        configuredBy: currentDirectory === current.defaultDirectory ? "default" : "settings",
-      } : current);
-      setAgentDataDirectoryDraft(currentDirectory);
-      setMigrateAgentData(false);
-      setAgentDataStatus("restarting");
-    } catch (error) {
-      setAgentDataStatus("error");
-      setAgentDataErrorCode("migration-failed");
-      setAgentDataErrorDetail(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const saveOptimizerPrompt = () => {
-    try {
-      const saved = writePromptOptimizerSystemPrompt(optimizerPromptDraft, window.localStorage);
-      setOptimizerPromptDraft(saved);
-      setOptimizerPromptSaved(saved);
-      setOptimizerPromptStatus("saved");
-    } catch {
-      setOptimizerPromptStatus("error");
-    }
-  };
-
-  const restoreOptimizerPrompt = () => {
-    try {
-      const restored = resetPromptOptimizerSystemPrompt(window.localStorage);
-      setOptimizerPromptDraft(restored);
-      setOptimizerPromptSaved(restored);
-      setOptimizerPromptStatus("saved");
-    } catch {
-      setOptimizerPromptStatus("error");
-    }
-  };
-
-  const saveOptimizerModel = (value: string) => {
-    setOptimizerModelValue(value);
-    try {
-      writePromptOptimizerModel(value ? JSON.parse(value) : null, window.localStorage);
-      setOptimizerPromptStatus("saved");
-    } catch {
-      setOptimizerPromptStatus("error");
-    }
-  };
-
-  const saveTitlePrompt = () => {
-    try {
-      const saved = writeSessionTitlePrompt(titlePromptDraft, window.localStorage);
-      setTitlePromptDraft(saved);
-      setTitlePromptSaved(saved);
-      setTitlePromptStatus("saved");
-    } catch {
-      setTitlePromptStatus("error");
-    }
-  };
-
-  const restoreTitlePrompt = () => {
-    try {
-      const restored = resetSessionTitlePrompt(window.localStorage);
-      setTitlePromptDraft(restored);
-      setTitlePromptSaved(restored);
-      setTitlePromptStatus("saved");
-    } catch {
-      setTitlePromptStatus("error");
-    }
-  };
-
-  const selectTitleModel = (value: string) => {
-    try {
-      if (!value) {
-        setTitleModel(resetSessionTitleModel(window.localStorage));
-        return;
-      }
-      const selected = titleModelOptions.find((model) => titleModelValue({ provider: model.provider, modelId: model.id }) === value);
-      if (!selected) return;
-      setTitleModel(writeSessionTitleModel({ provider: selected.provider, modelId: selected.id }, window.localStorage));
-    } catch {
-      setTitleModelsError(t("settings.sessionTitleModelSaveFailed"));
-    }
-  };
 
   const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase();
   const searchItems = useMemo(() => filterSettingsSearchItems(normalizedSearch, t, { hasProject: Boolean(modelCwd), hasDesktop: desktop.available, limit: 100 })
@@ -473,320 +221,48 @@ export function SettingsDialog({
               </>
             ) : <>
               {activeEntry.key === "browser" ? <BrowserSettings requestedPage={targetItem?.id} /> : activeEntry.key === "general" ? (
-              <>
-                <div className={styles.contentHeading}>
-                  <h2>{t("settings.general")}</h2>
-                  <p>{t("settings.generalDescription")}</p>
-                </div>
-                {onOpenOnboarding ? <section className={styles.conversationSection}>
-                  <div className={styles.conversationRow}>
-                    <span className={styles.featureIcon}><AliIcon name="rocket" size={19} /></span>
-                    <div className={styles.conversationCopy}>
-                      <div data-settings-id="general.onboarding" className={styles.rowTitle}>{t("settings.firstRunGuideTitle")}</div>
-                      <div className={styles.rowDescription}>{t("settings.firstRunGuideDescription")}</div>
-                    </div>
-                    <button className={styles.primaryButton} type="button" onClick={onOpenOnboarding}>
-                      <AliIcon name="play" size={13} />
-                      {t("settings.firstRunGuideAction")}
-                    </button>
-                  </div>
-                </section> : null}
-                {desktop.available ? <section className={styles.conversationSection}>
-                  <div data-settings-id="general.autoLaunch"><DesktopAutoLaunchSetting /></div>
-                  <DesktopUpdateSourceSetting />
-                  <DesktopUpdateScheduleSetting />
-                </section> : null}
-                <div className={styles.localNote}>
-                  <AliIcon name="lock" size={14} />
-                  <span>{t("settings.localNote")}</span>
-                </div>
-              </>
-              ) : activeKey === "laboratory" ? <LaboratorySettings cwd={modelCwd} /> : activeKey === "data" ? (
-              <>
-                <div className={styles.contentHeading}><h2>{t("settings.page.data")}</h2><p>{t("settings.page.dataDescription")}</p></div>
-                {desktop.available && window.piDesktop?.getAgentDataDirectory ? <section className={styles.conversationSection}>
-                  <div className={styles.agentDataHeader}>
-                    <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("settings.agentDataDirectory")}</div>
-                      <div className={styles.rowDescription}>{t("settings.agentDataDirectoryDescription")}</div>
-                    </div>
-                    {agentDataInfo?.configuredBy === "environment" ? <span className={styles.directoryBadge}>{t("settings.agentDataDirectoryEnvironment")}</span> : null}
-                  </div>
-                  <div className={styles.agentDataBody}>
-                    <label className={styles.agentDataField}>
-                      <span>{t("settings.agentDataDirectoryTargetPath")}</span>
-                      <span className={styles.agentDataInputRow}>
-                        <input
-                          value={agentDataDirectoryDraft}
-                          onChange={(event) => {
-                            setAgentDataDirectoryDraft(event.target.value);
-                            setAgentDataErrorCode(null);
-                            setAgentDataErrorDetail(null);
-                          }}
-                          disabled={agentDataStatus === "loading" || agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
-                          spellCheck={false}
-                          aria-label={t("settings.agentDataDirectoryTargetPath")}
-                        />
-                        <button className={styles.secondaryButton} type="button" disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onClick={() => { void chooseAgentDataDirectory(); }}>{t("settings.agentDataDirectoryChoose")}</button>
-                      </span>
-                    </label>
-                    {agentDataInfo ? <div className={styles.agentDataMeta}>{t("settings.agentDataDirectoryCurrent", { path: agentDataInfo.currentDirectory })}</div> : null}
-                    {agentDataInfo ? <div className={styles.agentDataMeta}>{t("settings.agentDataDirectoryDefault", { path: agentDataInfo.defaultDirectory })}</div> : null}
-                    <div className={styles.agentDataMigration}>
-                      <button
-                        className={styles.switch}
-                        type="button"
-                        role="switch"
-                        aria-checked={migrateAgentData}
-                        aria-label={t("settings.agentDataMigrate")}
-                        disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
-                        onClick={() => {
-                          setMigrateAgentData((current) => !current);
-                          setAgentDataErrorCode(null);
-                          setAgentDataErrorDetail(null);
-                        }}
-                      ><span /></button>
-                      <span><strong>{t("settings.agentDataMigrate")}</strong><small>{t("settings.agentDataMigrateDescription")}</small></span>
-                    </div>
-                    <div className={styles.agentDataActions}>
-                      <button className={styles.secondaryButton} type="button" disabled={!agentDataInfo || agentDataStatus === "applying" || agentDataInfo.environmentOverride} onClick={() => setAgentDataDirectoryDraft(agentDataInfo?.defaultDirectory ?? "")}>{t("settings.agentDataDirectoryRestoreDefault")}</button>
-                      <button className={styles.primaryButton} type="button" disabled={!agentDataInfo || !agentDataDirectoryDraft.trim() || agentDataDirectoryDraft.trim() === agentDataInfo.currentDirectory || agentDataStatus === "applying" || agentDataStatus === "restarting" || agentDataInfo.environmentOverride} onClick={() => { void applyAgentDataDirectory(); }}>
-                        {agentDataStatus === "applying" ? t("settings.agentDataDirectoryApplying") : agentDataStatus === "restarting" ? t("settings.agentDataDirectoryRestarting") : t(migrateAgentData ? "settings.agentDataDirectoryMigrateApply" : "settings.agentDataDirectoryApply")}
-                      </button>
-                    </div>
-                    {agentDataErrorCode ? <div className={styles.agentDataError} role="alert">
-                      <span>{t(`settings.agentDataDirectoryError.${agentDataErrorCode}`)}</span>
-                      {agentDataErrorDetail ? <code>{agentDataErrorDetail}</code> : null}
-                    </div> : null}
-                    {agentDataInfo?.environmentOverride ? <div className={styles.agentDataNotice}>{t("settings.agentDataDirectoryEnvironmentDescription")}</div> : null}
-                    {agentDataInfo?.portableRuntimeDirectory ? <div className={styles.portableCacheNote}>
-                      <AliIcon name="info" size={14} />
-                      <span>{t("settings.portableRuntimeCache", { path: agentDataInfo.portableRuntimeDirectory })}</span>
-                    </div> : null}
-                  </div>
-                </section> : null}
-                {desktop.available ? <div data-settings-id="data.websiteAccounts"><CredentialVaultSettings /></div> : null}
-                {desktop.available ? <RuntimeLogSettings /> : null}
-              </>
-              ) : activeKey === "network" ? (
-              <>
-                <div className={styles.contentHeading}><h2>{t("networkProxy.title")}</h2><p>{t("networkProxy.description")}</p></div>
-                <div data-settings-id="general.proxy"><NetworkProxySettings /></div>
-              </>
-              ) : activeKey === "conversation" ? (
-              <>
-                <div className={styles.contentHeading}>
-                  <h2>{t("settings.conversation")}</h2>
-                  <p>{t("settings.conversationDescription")}</p>
-                </div>
-
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.inputSection")}</h3>
-                <section className={styles.conversationSection}>
-                  <div className={styles.conversationRow}>
-                    <div className={styles.conversationCopy}>
-                      <div data-settings-id="conversation.autoScroll" className={styles.rowTitle}>{t("settings.liveOutputAutoScroll")}</div>
-                      <div className={styles.rowDescription}>{t("settings.liveOutputAutoScrollDescription")}</div>
-                    </div>
-                    <button
-                      className={styles.switch}
-                      type="button"
-                      role="switch"
-                      aria-checked={liveOutputAutoScrollEnabled}
-                      aria-label={t("settings.liveOutputAutoScroll")}
-                      onClick={() => setLiveOutputAutoScrollEnabled(!liveOutputAutoScrollEnabled)}
-                    >
-                      <span />
-                    </button>
-                  </div>
-
-                  <div className={styles.conversationRow}>
-                    <div className={styles.conversationCopy}>
-                      <div data-settings-id="conversation.notifications" className={styles.rowTitle}>{t("taskControls.notifications")}</div>
-                      <div className={styles.rowDescription}>
-                        {conversation.notificationCapability === "unsupported"
-                          ? t("taskControls.notificationsUnsupported")
-                          : t("taskControls.notificationsDescription")}
-                      </div>
-                    </div>
-                    <button
-                      className={styles.switch}
-                      type="button"
-                      role="switch"
-                      aria-checked={conversation.notificationEnabled}
-                      aria-label={t("taskControls.notifications")}
-                      disabled={conversation.notificationCapability === "unsupported"}
-                      onClick={() => void conversation.onNotificationToggle()}
-                    >
-                      <span />
-                    </button>
-                  </div>
-
-                </section>
-                <section className={styles.conversationSection} data-settings-id="conversation.runningSendMode">
-                  <div className={styles.conversationRow}>
-                    <div className={styles.conversationCopy}>
-                      <div id="running-send-mode-label" className={styles.rowTitle}>{t("settings.runningSendMode")}</div>
-                      <div className={styles.rowDescription}>{t("settings.runningSendModeHelp")}</div>
-                    </div>
-                    <div className={styles.sendModeTabs} role="group" aria-labelledby="running-send-mode-label">
-                      {(["steer", "next_turn"] as const).map(mode => (
-                        <button key={mode} type="button" aria-pressed={runningSendMode === mode} onClick={() => setRunningSendMode(mode)}>
-                          {t(mode === "steer" ? "chat.steer" : "chat.queueSend")}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-                <AnswerLinkSettings />
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.assistSection")}</h3>
-                <ReplySuggestionsSettings cwd={modelCwd} />
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.runtimeSection")}</h3>
-                <div className={styles.runtimeCards}>
-                  <div data-settings-id="general.runningStatusLabel"><RunningStatusSettings cwd={modelCwd} /></div>
-                  <div data-settings-id="general.modelRetry"><ModelRetrySettings /></div>
-                  <div data-settings-id="models.compaction"><ModelCompactionSettings /></div>
-                  <ModelFallbackSetting />
-                </div>
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.permissionSection")}</h3>
-                <ToolApprovalSettings />
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.promptSection")}</h3>
-                <section className={styles.promptCard} aria-labelledby="system-prompt-heading">
-                  <header className={styles.promptCardHeader}>
-                    <h3 data-settings-id="conversation.systemPrompt" id="system-prompt-heading">{t("system.prompt")}</h3>
-                    <p>{t("system.description")}</p>
-                  </header>
-                  <div className={styles.promptCardBody}>
-                    <SystemPromptEditor
-                      effectivePrompt={conversation.systemPrompt}
-                      onSaved={conversation.onSystemPromptSaved}
-                    />
-                  </div>
-                </section>
-                <RuntimePromptSettings />
-                <section className={styles.promptCard} aria-labelledby="prompt-optimizer-heading">
-                  <header className={styles.promptCardHeader}>
-                    <h3 data-settings-id="conversation.promptOptimizer" id="prompt-optimizer-heading">{t("settings.promptOptimizerTitle")}</h3>
-                    <p>{t("settings.promptOptimizerDescription")}</p>
-                  </header>
-                  <div className={styles.promptCardBody}>
-                    <label className={styles.optimizerModelField}>
-                      <span>{t("settings.promptOptimizerModel")}</span>
-                      <select value={optimizerModelValue} onChange={(event) => saveOptimizerModel(event.target.value)}>
-                        <option value="">{t("settings.promptOptimizerModelDefault")}</option>
-                        {optimizerModels.map((candidate) => {
-                          const value = JSON.stringify({ provider: candidate.provider, modelId: candidate.id });
-                          return <option key={`${candidate.provider}/${candidate.id}`} value={value}>{candidate.name} · {candidate.provider}</option>;
-                        })}
-                      </select>
-                      <small>{t("settings.promptOptimizerModelDescription")}</small>
-                    </label>
-                    <label className={styles.promptTextField}>
-                      <span>{t("settings.promptOptimizerInstructionLabel")}</span>
-                      <small>{t("settings.promptOptimizerInstructionDescription")}</small>
-                      <textarea
-                        className={styles.promptEditor}
-                        value={optimizerPromptDraft}
-                        maxLength={PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH}
-                        aria-label={t("settings.promptOptimizerInstructionLabel")}
-                        onChange={(event) => {
-                          setOptimizerPromptDraft(event.target.value);
-                          setOptimizerPromptStatus("idle");
-                        }}
-                      />
-                    </label>
-                    <div className={styles.promptEditorFooter}>
-                      <span role="status">
-                        {optimizerPromptStatus === "saved"
-                          ? t("settings.promptOptimizerSaved")
-                          : optimizerPromptStatus === "error"
-                            ? t("settings.promptOptimizerSaveFailed")
-                            : `${Array.from(optimizerPromptDraft).length.toLocaleString()} / ${PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH.toLocaleString()}`}
-                      </span>
-                      <div>
-                        <button className={styles.secondaryButton} type="button" onClick={restoreOptimizerPrompt}>{t("settings.promptOptimizerRestore")}</button>
-                        <button
-                          className={styles.primaryButton}
-                          type="button"
-                          disabled={!optimizerPromptDraft.trim() || optimizerPromptDraft.trim() === optimizerPromptSaved}
-                          onClick={saveOptimizerPrompt}
-                        >
-                          {t("settings.promptOptimizerSave")}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-                <h3 className={styles.settingsSectionHeading}>{t("settings.conversation.titleSection")}</h3>
-                <section className={styles.promptCard} aria-labelledby="session-title-prompt-heading">
-                  <header className={styles.promptCardHeader}>
-                    <h3 id="session-title-prompt-heading">{t("settings.sessionTitlePromptTitle")}</h3>
-                    <p>{t("settings.sessionTitlePromptDescription")}</p>
-                  </header>
-                  <div className={styles.promptCardBody}>
-                    <label data-settings-id="conversation.titleModel" className={styles.modelSelectField}>
-                      <span>{t("settings.sessionTitleModelTitle")}</span>
-                      <select
-                        value={titleModel ? titleModelValue(titleModel) : ""}
-                        disabled={titleModelsLoading}
-                        onChange={(event) => selectTitleModel(event.target.value)}
+                <SettingsPage title={t("settings.general")} description={t("settings.generalDescription")}>
+                  <SettingsSection>
+                    {onOpenOnboarding ? (
+                      <SettingsRow
+                        title={t("settings.firstRunGuideTitle")}
+                        description={t("settings.firstRunGuideDescription")}
+                        settingsId="general.onboarding"
                       >
-                        <option value="">{t("settings.sessionTitleModelCurrent")}</option>
-                        {titleModel && !titleModelOptions.some((model) => model.provider === titleModel.provider && model.id === titleModel.modelId) ? (
-                          <option value={titleModelValue(titleModel)} disabled>
-                            {t("settings.sessionTitleModelUnavailable", { model: `${titleModel.provider}/${titleModel.modelId}` })}
-                          </option>
-                        ) : null}
-                        {titleModelOptions.map((model) => (
-                          <option key={`${model.provider}:${model.id}`} value={titleModelValue({ provider: model.provider, modelId: model.id })}>
-                            {model.name || model.id} · {model.provider}
-                          </option>
-                        ))}
-                      </select>
-                      <small role="status">
-                        {titleModelsLoading
-                          ? t("settings.sessionTitleModelsLoading")
-                          : titleModelsError
-                            ? t("settings.sessionTitleModelsLoadFailed", { error: titleModelsError })
-                            : t("settings.sessionTitleModelDescription")}
-                      </small>
-                    </label>
-                    <label className={styles.promptTextField}>
-                      <span>{t("settings.sessionTitleInstructionLabel")}</span>
-                      <small>{t("settings.sessionTitleInstructionDescription")}</small>
-                      <textarea
-                        className={styles.promptEditor}
-                        value={titlePromptDraft}
-                        maxLength={SESSION_TITLE_PROMPT_MAX_LENGTH}
-                        aria-label={t("settings.sessionTitleInstructionLabel")}
-                        onChange={(event) => {
-                          setTitlePromptDraft(event.target.value);
-                          setTitlePromptStatus("idle");
-                        }}
-                      />
-                    </label>
-                    <div className={styles.promptEditorFooter}>
-                      <span role="status">
-                        {titlePromptStatus === "saved"
-                          ? t("settings.sessionTitlePromptSaved")
-                          : titlePromptStatus === "error"
-                            ? t("settings.sessionTitlePromptSaveFailed")
-                            : `${Array.from(titlePromptDraft).length.toLocaleString()} / ${SESSION_TITLE_PROMPT_MAX_LENGTH.toLocaleString()}`}
-                      </span>
-                      <div>
-                        <button className={styles.secondaryButton} type="button" onClick={restoreTitlePrompt}>{t("settings.sessionTitlePromptRestore")}</button>
-                        <button
-                          className={styles.primaryButton}
-                          type="button"
-                          disabled={!titlePromptDraft.trim() || titlePromptDraft.trim() === titlePromptSaved}
-                          onClick={saveTitlePrompt}
-                        >
-                          {t("settings.sessionTitlePromptSave")}
+                        <button className={primitiveStyles.buttonPrimary} type="button" onClick={onOpenOnboarding}>
+                          <AliIcon name="play" size={13} />
+                          {t("settings.firstRunGuideAction")}
                         </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </>
+                      </SettingsRow>
+                    ) : null}
+                    {desktop.available ? (
+                      <>
+                        <div data-settings-id="general.autoLaunch"><DesktopAutoLaunchSetting /></div>
+                        <DesktopUpdateSourceSetting />
+                        <DesktopUpdateScheduleSetting />
+                      </>
+                    ) : null}
+                  </SettingsSection>
+                </SettingsPage>
+              ) : activeKey === "laboratory" ? <LaboratorySettings cwd={modelCwd} /> : activeKey === "data" ? (
+                <DataSettingsPage open={open} desktopAvailable={desktop.available} />
+              ) : activeKey === "network" ? (
+                <div data-settings-id="general.proxy"><NetworkProxySettings /></div>
+              ) : activeKey === "conversation" ? (
+                <ConversationSettingsPage
+                  modelCwd={modelCwd}
+                  focusedItemId={targetItem?.id}
+                  notificationEnabled={conversation.notificationEnabled}
+                  notificationCapability={conversation.notificationCapability}
+                  onNotificationToggle={conversation.onNotificationToggle}
+                />
+              ) : activeKey === "prompts" ? (
+                <PromptsSettingsPage
+                  open={open}
+                  modelCwd={modelCwd}
+                  systemPrompt={conversation.systemPrompt}
+                  onSystemPromptSaved={conversation.onSystemPromptSaved}
+                />
               ) : sectionContent ? (
               sectionContent
               ) : (

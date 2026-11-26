@@ -6,10 +6,12 @@ import { useRunningStatusLabel } from "@/hooks/useRunningStatusLabel";
 import { useRunningStatusGenerationPrompt } from "@/hooks/useRunningStatusGenerationPrompt";
 import { defaultRunningStatusLabels, normalizeRunningStatusLabels, parseGeneratedRunningStatusLabels, RUNNING_STATUS_MAX_PROMPT_LENGTH } from "@/lib/running-status-labels";
 import { AliIcon } from "./AliIcon";
+import { SettingsModal, SettingsRow } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import shared from "./ModelRetrySettings.module.css";
 import styles from "./RunningStatusSettings.module.css";
 
-export function RunningStatusSettings({ cwd }: { cwd?: string }) {
+export function RunningStatusSettings({ cwd, compact = false }: { cwd?: string; compact?: boolean }) {
   const { t, locale } = useI18n();
   const { labels, setLabels } = useRunningStatusLabel();
   const { prompt, setPrompt } = useRunningStatusGenerationPrompt();
@@ -17,6 +19,7 @@ export function RunningStatusSettings({ cwd }: { cwd?: string }) {
   const [generating, setGenerating] = useState(false);
   const [feedback, setFeedback] = useState<{ error: boolean; key: string; model?: string } | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [modalOpen, setModalOpen] = useState(false);
   const request = useRef<AbortController | null>(null);
   const id = useId();
   const saved = labels.length ? labels : defaultRunningStatusLabels(locale);
@@ -48,6 +51,69 @@ export function RunningStatusSettings({ cwd }: { cwd?: string }) {
       if (request.current === controller) { request.current = null; setGenerating(false); }
     }
   };
+  if (compact) {
+    return (
+      <>
+        <SettingsRow
+          title={t("settings.runningStatusLabel")}
+          description={t("settings.runningStatusCount", { count: saved.length })}
+          badge={preview[0]}
+          settingsId="general.runningStatusLabel"
+        >
+          <button type="button" className={primitiveStyles.button} onClick={() => setModalOpen(true)}>
+            {t("settings.manageLibrary")}
+          </button>
+        </SettingsRow>
+        <SettingsModal
+          open={modalOpen}
+          title={t("settings.runningStatusLabel")}
+          description={t("settings.runningStatusLabelHint")}
+          closeLabel={t("settings.closeAction")}
+          onClose={() => setModalOpen(false)}
+          footer={
+            <>
+              <button type="button" className={primitiveStyles.button} disabled={generating} onClick={() => { setLabels([]); setDraft(null); setFeedback(null); }}>
+                {t("settings.runningStatusRestore")}
+              </button>
+              <div className={primitiveStyles.modalActions}>
+                <button type="button" className={primitiveStyles.button} disabled={generating} onClick={() => void generate()}>
+                  <AliIcon name={generating ? "reload" : "solution"} size={14} />{t(generating ? "settings.runningStatusGenerating" : "settings.runningStatusGenerate")}
+                </button>
+                <button type="button" className={primitiveStyles.buttonPrimary} disabled={generating || parsed === null || draft === null} onClick={() => {
+                  if (!parsed) return;
+                  setLabels(parsed); setDraft(null); setFeedback({ error: false, key: "settings.runningStatusSaved" });
+                }}>{t("settings.runningStatusSave")}</button>
+              </div>
+            </>
+          }
+        >
+          <div className={shared.fields}>
+            <label className={styles.field}>
+              <span>{t("settings.runningStatusText")} ({t("settings.runningStatusCount", { count: parsed?.length ?? 0 })})</span>
+              <textarea className={styles.input} value={text} rows={8} disabled={generating}
+                aria-describedby={`${id}-count`} onChange={event => { setDraft(event.target.value); setFeedback(null); }} />
+            </label>
+            <label className={styles.field}>
+              <span>{t("settings.runningStatusPrompt")}</span>
+              <textarea className={`${styles.input} ${styles.prompt}`} value={prompt} rows={3} disabled={generating}
+                maxLength={RUNNING_STATUS_MAX_PROMPT_LENGTH} placeholder={t("settings.runningStatusPromptPlaceholder")}
+                onChange={event => { setPrompt(event.target.value); setFeedback(null); }} />
+            </label>
+          </div>
+          {parsed === null ? <p className={styles.error} role="alert">{t("settings.runningStatusInvalid")}</p> : null}
+          {feedback ? <p role={feedback.error ? "alert" : "status"} className={feedback.error ? styles.error : styles.caption}>{t(feedback.key, { model: feedback.model ?? "" })}</p> : null}
+          <div className={styles.preview}>
+            <div className={styles.previewHeading}><span className={styles.caption}>{t("settings.runningStatusPreview")}</span><button type="button" onClick={() => setPreviewIndex(index => (index + 1) % preview.length)}>{t("settings.runningStatusNextPreview")}</button></div>
+            <div className={styles.status}>
+              <span className={styles.dot} aria-hidden="true" />
+              <span className={styles.label}>{preview[previewIndex % preview.length]}</span>
+              <span className={styles.elapsed}>· {t("chat.taskDuration.elapsed")} 25s</span>
+            </div>
+          </div>
+        </SettingsModal>
+      </>
+    );
+  }
   return <section className={shared.card} aria-labelledby={`${id}-title`}>
     <div className={shared.heading}>
       <span className={shared.icon}><AliIcon name="timer" size={17} /></span>

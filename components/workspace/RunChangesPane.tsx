@@ -21,6 +21,25 @@ interface RunChangesPaneProps {
 
 const MAX_SETTLEMENT_READS = 30;
 
+function formatRunFileDisplay(filePath: string, cwd?: string): { name: string; directory: string | null } {
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  const name = segments.pop() ?? filePath;
+  const fullDir = segments.join("/");
+  if (!cwd) {
+    return { name, directory: null };
+  }
+  const normalizedCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  const comparablePath = normalizedPath.toLowerCase();
+  const comparableCwd = normalizedCwd.toLowerCase();
+  if (comparablePath.startsWith(`${comparableCwd}/`)) {
+    const relative = normalizedPath.slice(normalizedCwd.length + 1);
+    const slash = relative.lastIndexOf("/");
+    return { name, directory: slash > 0 ? relative.slice(0, slash) : null };
+  }
+  return { name, directory: fullDir || null };
+}
+
 /** Isolates per-run change polling from FileExplorer and FileViewer renders. */
 export const RunChangesPane = memo(function RunChangesPane({
   active,
@@ -92,7 +111,19 @@ export const RunChangesPane = memo(function RunChangesPane({
       </div>
       {runChanges ? <div className={styles.runScope}>{t("files.runScope")}</div> : null}
       {runChanges?.partial ? <div className={styles.runNotice}>{t("files.runPartial")}</div> : null}
-      {runChanges?.files.length ? runChanges.files.map((file) => <button key={file.path} className={styles.runFile} type="button" title={file.path} onClick={() => { onOpenRunFile(file.path, file.path.replace(/\\/g, "/").split("/").pop() ?? file.path, file.kind === "deleted" ? { modeHint: "diff" } : undefined); }}><AliIcon name="file" size={14} /><span>{file.path.replace(/\\/g, "/").split("/").pop()}</span><small>{t(`files.run.${file.kind}`)}</small></button>) : <div className={styles.runEmpty}>{!runChanges ? t("files.runNever") : runChanges.status === "running" ? t("files.runPending") : runChanges.status === "unavailable" ? t("files.runUnavailable") : t("files.runEmpty")}</div>}
+      {runChanges?.files.length ? runChanges.files.map((file) => {
+        const { name, directory } = formatRunFileDisplay(file.path, runChanges.cwd);
+        return (
+          <button key={file.path} className={styles.runFile} type="button" title={file.path} onClick={() => { onOpenRunFile(file.path, name, file.kind === "deleted" ? { modeHint: "diff" } : undefined); }}>
+            <AliIcon name="file" size={14} />
+            <span className={styles.runFileCopy}>
+              <span className={styles.runFileName}>{name}</span>
+              {directory ? <span className={styles.runFileDir}>{directory}</span> : null}
+            </span>
+            <small>{t(`files.run.${file.kind}`)}</small>
+          </button>
+        );
+      }) : <div className={styles.runEmpty}>{!runChanges ? t("files.runNever") : runChanges.status === "running" ? t("files.runPending") : runChanges.status === "unavailable" ? t("files.runUnavailable") : t("files.runEmpty")}</div>}
     </div>
   </>;
 });

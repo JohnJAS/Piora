@@ -290,14 +290,14 @@ export function SpeechSettings() {
         <p className={styles.networkNote}>{t(status?.bundled ? "speech.bundledHint" : "speech.networkNote")}</p>
       </section>
 
-      {!status?.bundled && <section className={styles.card}>
-        <div className={styles.cardHeader}>
+      {!status?.bundled && <details className={styles.card} data-settings-id="speech.manual">
+        <summary className={styles.cardHeader} style={{ cursor: "pointer", listStyle: "none" }}>
           <div>
-            <h3 data-settings-id="speech.manual">{t("speech.manualTitle")}</h3>
+            <h3>{t("speech.manualTitle")}</h3>
             <p>{t("speech.manualDescription")}</p>
           </div>
           <span className={styles.manualBadge}>{t("speech.manualAlwaysAvailable")}</span>
-        </div>
+        </summary>
         <div className={styles.downloadList}>
           {manual?.sources.map((source, index) => (
             <a key={source.name} href={source.url} target="_blank" rel="noreferrer" download={source.name}>
@@ -347,7 +347,7 @@ export function SpeechSettings() {
         ) : null}
         <p className={styles.networkNote}>{t("speech.manualIntegrity")}</p>
         <p className={styles.networkNote}>{t("speech.manualChecksumHelp")}</p>
-      </section>}
+      </details>}
 
       <section className={styles.card}>
         <div className={styles.cardHeader}>

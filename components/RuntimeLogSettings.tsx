@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import type { LogSettings, RuntimeLogInfo } from "@/desktop/src/logger";
-import styles from "./SettingsDialog.module.css";
+import { SettingsDisclosure, SettingsRow, SettingsSection } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 
 export function RuntimeLogSettings() {
   const { t } = useI18n();
@@ -69,56 +70,89 @@ export function RuntimeLogSettings() {
     finally { setSaving(false); }
   };
   const busy = saving || loading || action === "copying" || action === "opening";
-  return <section className={styles.conversationSection} data-settings-id="general.runtimeLog">
-    <div className={styles.agentDataHeader}>
-      <div className={styles.conversationCopy}>
-        <div className={styles.rowTitle}>{t("settings.runtimeLog.title")}</div>
-        <div className={styles.rowDescription}>{t("settings.runtimeLog.description")}</div>
-      </div>
-    </div>
-    <div className={styles.agentDataBody}>
-      {info ? <>
-        <div className={styles.agentDataField}>
-          <span>{t("settings.runtimeLog.path")}</span>
-          <code className={styles.runtimeLogPath}>{info.filePath}</code>
-        </div>
-        <div className={styles.rowDescription} role="status">
-          {info.fileLoggingAvailable ? t("settings.runtimeLog.effective", { level: info.settings.level, size: info.settings.maxSizeMiB, count: info.settings.backups }) : t("settings.runtimeLog.unwritable")}
-        </div>
-      </> : <div className={styles.rowDescription} role="status">
-        {t(loading ? "settings.runtimeLog.loading" : "settings.runtimeLog.unavailable")}
-      </div>}
-      {draft && info && <fieldset disabled={busy} className={styles.logConfig}>
-        <legend>{t("settings.runtimeLog.configure")}</legend>
-        <label>{t("settings.runtimeLog.directory")}<input value={draft.directory} onChange={event => setDraft({ ...draft, directory: event.target.value })} /></label>
-        <div className={styles.agentDataActions}>
-          <button type="button" className={styles.secondaryButton} onClick={() => { void (async () => {
-            try { const directory = await window.piDesktop?.selectDirectory(); if (directory) setDraft(current => current ? { ...current, directory } : current); }
-            catch (error) { setFailed(true); setFeedback(String(error)); }
-          })(); }}>{t("settings.runtimeLog.choose")}</button>
-          <button type="button" className={styles.secondaryButton} onClick={() => setDraft({ directory: info.defaultDirectory, level: "info", maxSizeMiB: 5, backups: 1 })}>{t("settings.runtimeLog.defaults")}</button>
-        </div>
-        <label>{t("settings.runtimeLog.level")}<select value={draft.level} onChange={event => setDraft({ ...draft, level: event.target.value as LogSettings["level"] })}>{["error", "warn", "info", "debug"].map(level => <option key={level}>{level}</option>)}</select></label>
-        <label>{t("settings.runtimeLog.size")}<input type="number" min={1} max={100} value={draft.maxSizeMiB} onChange={event => setDraft({ ...draft, maxSizeMiB: Number(event.target.value) })} /></label>
-        <label>{t("settings.runtimeLog.backups")}<input type="number" min={1} max={20} value={draft.backups} onChange={event => setDraft({ ...draft, backups: Number(event.target.value) })} /></label>
-        <p className={styles.rowDescription}>{t("settings.runtimeLog.scope")}</p>
-        <button type="button" className={styles.secondaryButton} onClick={() => { void save(); }}>{t("settings.runtimeLog.save")}</button>
-      </fieldset>}
-      {feedback && <div role={failed ? "alert" : "status"} className={failed ? styles.agentDataError : styles.rowDescription}>{feedback}</div>}
-      <div className={styles.agentDataActions}>
-        <button type="button" className={styles.secondaryButton} disabled={!info || busy} onClick={() => { void copyPath(); }}>
+  return (
+    <SettingsSection settingsId="general.runtimeLog">
+      <SettingsRow
+        title={t("settings.runtimeLog.title")}
+        description={
+          <>
+            {info ? (
+              <>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "calc(var(--text-xs) * 0.94)", overflowWrap: "anywhere" }}>
+                  {info.filePath}
+                </div>
+                <div role="status" style={{ marginTop: 3 }}>
+                  {info.fileLoggingAvailable
+                    ? t("settings.runtimeLog.effective", { level: info.settings.level, size: info.settings.maxSizeMiB, count: info.settings.backups })
+                    : t("settings.runtimeLog.unwritable")}
+                </div>
+              </>
+            ) : (
+              <div role="status">{t(loading ? "settings.runtimeLog.loading" : "settings.runtimeLog.unavailable")}</div>
+            )}
+            {action === "copyFailed" || action === "openFailed" ? (
+              <div className={primitiveStyles.statusError} role="alert">{t(`settings.runtimeLog.${action}`)}</div>
+            ) : null}
+          </>
+        }
+      >
+        <button type="button" className={primitiveStyles.button} disabled={!info || busy} onClick={() => { void copyPath(); }}>
           {t(action === "copied" ? "settings.runtimeLog.copied" : "settings.runtimeLog.copy")}
         </button>
-        <button type="button" className={styles.secondaryButton} disabled={!info?.fileLoggingAvailable || busy} onClick={() => { void revealLog(); }}>
+        <button type="button" className={primitiveStyles.button} disabled={!info?.fileLoggingAvailable || busy} onClick={() => { void revealLog(); }}>
           {t("settings.runtimeLog.openFolder")}
         </button>
-        <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => setRevision(value => value + 1)}>
+        <button type="button" className={primitiveStyles.button} disabled={busy} onClick={() => setRevision(value => value + 1)}>
           {t("settings.runtimeLog.refresh")}
         </button>
-      </div>
-      {action === "copyFailed" || action === "openFailed" ? <div className={styles.agentDataError} role="alert">
-        {t(`settings.runtimeLog.${action}`)}
-      </div> : null}
-    </div>
-  </section>;
+      </SettingsRow>
+
+      {draft && info ? (
+        <SettingsDisclosure
+          summary={t("settings.runtimeLog.configure")}
+          meta={t("settings.runtimeLog.effective", { level: info.settings.level, size: info.settings.maxSizeMiB, count: info.settings.backups })}
+        >
+          <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0, display: "grid", gap: 12 }}>
+            <label className={primitiveStyles.field}>
+              <span className={primitiveStyles.fieldLabel}>{t("settings.runtimeLog.directory")}</span>
+              <input className={primitiveStyles.input} value={draft.directory} onChange={event => setDraft({ ...draft, directory: event.target.value })} />
+            </label>
+            <div className={primitiveStyles.gridTwo}>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("settings.runtimeLog.level")}</span>
+                <select className={primitiveStyles.input} value={draft.level} onChange={event => setDraft({ ...draft, level: event.target.value as LogSettings["level"] })}>
+                  {["error", "warn", "info", "debug"].map(level => <option key={level}>{level}</option>)}
+                </select>
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("settings.runtimeLog.size")}</span>
+                <input className={primitiveStyles.input} type="number" min={1} max={100} value={draft.maxSizeMiB} onChange={event => setDraft({ ...draft, maxSizeMiB: Number(event.target.value) })} />
+              </label>
+              <label className={primitiveStyles.field}>
+                <span className={primitiveStyles.fieldLabel}>{t("settings.runtimeLog.backups")}</span>
+                <input className={primitiveStyles.input} type="number" min={1} max={20} value={draft.backups} onChange={event => setDraft({ ...draft, backups: Number(event.target.value) })} />
+              </label>
+            </div>
+            <div className={primitiveStyles.compactFooter}>
+              <div className={primitiveStyles.modalActions}>
+                <button type="button" className={primitiveStyles.button} onClick={() => {
+                  void (async () => {
+                    try { const directory = await window.piDesktop?.selectDirectory(); if (directory) setDraft(current => current ? { ...current, directory } : current); }
+                    catch (error) { setFailed(true); setFeedback(String(error)); }
+                  })();
+                }}>{t("settings.runtimeLog.choose")}</button>
+                <button type="button" className={primitiveStyles.button} onClick={() => setDraft({ directory: info.defaultDirectory, level: "info", maxSizeMiB: 5, backups: 1 })}>
+                  {t("settings.runtimeLog.defaults")}
+                </button>
+              </div>
+              <button type="button" className={primitiveStyles.buttonPrimary} onClick={() => { void save(); }}>
+                {t("settings.runtimeLog.save")}
+              </button>
+            </div>
+            {feedback ? <div role={failed ? "alert" : "status"} className={failed ? primitiveStyles.statusError : primitiveStyles.statusText}>{feedback}</div> : null}
+          </fieldset>
+        </SettingsDisclosure>
+      ) : null}
+    </SettingsSection>
+  );
 }

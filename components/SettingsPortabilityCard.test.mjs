@@ -4,14 +4,17 @@ import test from "node:test";
 
 const card = fs.readFileSync(new URL("./SettingsPortabilityCard.tsx", import.meta.url), "utf8");
 const settings = fs.readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
+const dataPage = fs.readFileSync(new URL("./settings/DataSettingsPage.tsx", import.meta.url), "utf8");
 const shell = fs.readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 test("Data & Diagnostics exposes website accounts, data location and logs without legacy cards", () => {
   assert.match(settings, /activeKey === "data"/);
+  assert.match(settings, /<DataSettingsPage/);
   assert.doesNotMatch(settings, /SettingsPortabilityCard|ApplicationBackupCard|OrganizationAnalyticsSettings|general\.portability/);
-  assert.match(settings, /<CredentialVaultSettings\s*\/>/);
-  assert.match(settings, /getAgentDataDirectory/);
-  assert.match(settings, /<RuntimeLogSettings\s*\/>/);
+  assert.doesNotMatch(dataPage, /SettingsPortabilityCard|ApplicationBackupCard|OrganizationAnalyticsSettings|general\.portability/);
+  assert.match(dataPage, /<CredentialVaultSettings\s*\/>/);
+  assert.match(dataPage, /getAgentDataDirectory/);
+  assert.match(dataPage, /<RuntimeLogSettings\s*\/>/);
 });
 
 test("the legacy portability component retains its accessible file flow", () => {

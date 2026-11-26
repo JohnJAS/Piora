@@ -5,7 +5,7 @@ export const workflowsEn = {
   "laboratory.enable": "Enable",
   "laboratory.disable": "Disable",
   "laboratory.saving": "Saving…",
-  "laboratory.planGoalDescription": "Review plans before execution or pursue goals within a turn budget. Enabling this also enables the required tools; no project tool setup is needed.",
+  "laboratory.planGoalDescription": "Review plans before execution or pursue goals within a turn budget.",
   "laboratory.disableHelp": "Turning this off keeps saved plans and goal progress. The current turn can finish, then automatic continuation stops. You can pause or cancel at any time. Third-party commands are unaffected.",
   "laboratory.error": "Laboratory settings could not be saved or loaded.",
   "commands.togglePlanMode": "Toggle Plan mode",
@@ -134,6 +134,7 @@ export const workflowsEn = {
   "workflow.steps.filesChanged": "{count} files changed",
   "workflow.steps.oneFileChanged": "1 file changed",
   "workflow.steps.popoverTitle": "Task progress",
+  "workflow.steps.dismiss": "Dismiss task progress",
 
   // Inline user input card & transcript Q&A history disclosure
   "userInput.askingQuestions": "Asking question(s)…",
@@ -156,7 +157,7 @@ export const workflowsZh: Record<keyof typeof workflowsEn, string> = {
   "laboratory.enable": "开启",
   "laboratory.disable": "关闭",
   "laboratory.saving": "保存中…",
-  "laboratory.planGoalDescription": "先审核计划再执行，或在轮次预算内持续推进目标。开启后自动启用所需工具，无需在项目工具中另行设置。",
+  "laboratory.planGoalDescription": "先审计划再执行，或在轮次预算内持续推进目标，所需工具自动启用。",
   "laboratory.disableHelp": "关闭后保留已有计划和目标进展，当前轮结束后停止自动继续，可随时暂停或取消。第三方命令不受影响。",
   "laboratory.error": "无法保存或加载实验室设置。",
   "commands.togglePlanMode": "切换 Plan 计划模式",
@@ -285,6 +286,7 @@ export const workflowsZh: Record<keyof typeof workflowsEn, string> = {
   "workflow.steps.filesChanged": "{count} 个文件已修改",
   "workflow.steps.oneFileChanged": "1 个文件已修改",
   "workflow.steps.popoverTitle": "任务步骤进度",
+  "workflow.steps.dismiss": "关闭任务进度",
 
   // 内联问答卡与对话历史问答折叠块
   "userInput.askingQuestions": "正在向你提问…",

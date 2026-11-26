@@ -3,8 +3,16 @@ import { SessionManager, type AgentSession } from "@earendil-works/pi-coding-age
 import { generateSessionTitle } from "@/lib/session-title";
 import {
   SESSION_TITLE_PROMPT_MAX_LENGTH,
+  extractEarlySessionTitleQuery,
   normalizeSessionTitlePrompt,
 } from "@/lib/session-title-prompt";
+
+function readLiveSessionName(session: { inner: unknown }): string | undefined {
+  const inner = session.inner as {
+    sessionManager?: { getSessionName?: () => string | undefined };
+  };
+  return inner.sessionManager?.getSessionName?.()?.trim() || undefined;
+}
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { invalidateSessionListCache, resolveSessionPath } from "@/lib/session-reader";
 
@@ -19,6 +27,7 @@ export async function POST(
     let body: {
       instructions?: unknown;
       currentTitle?: unknown;
+      seedQuery?: unknown;
       apply?: unknown;
       onlyIfUnnamed?: unknown;
       provider?: unknown;
@@ -47,6 +56,9 @@ export async function POST(
     if (body.currentTitle !== undefined && typeof body.currentTitle !== "string") {
       return NextResponse.json({ error: "Current title must be a string" }, { status: 400 });
     }
+    if (body.seedQuery !== undefined && typeof body.seedQuery !== "string") {
+      return NextResponse.json({ error: "Seed query must be a string" }, { status: 400 });
+    }
     if (body.apply !== undefined && typeof body.apply !== "boolean") {
       return NextResponse.json({ error: "Apply must be a boolean" }, { status: 400 });
     }
@@ -64,23 +76,26 @@ export async function POST(
     if (Boolean(provider) !== Boolean(modelId)) {
       return NextResponse.json({ error: "Provider and model id must be selected together" }, { status: 400 });
     }
+    const seedQuery = body.onlyIfUnnamed === true ? extractEarlySessionTitleQuery(body.seedQuery) : null;
 
+    const existing = getRpcSession(id);
+    const liveSession = existing?.isAlive() ? existing : undefined;
     const filePath = await resolveSessionPath(id);
-    if (!filePath) {
+    if (!liveSession && !filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const manager = SessionManager.open(filePath);
-    const currentName = manager.getSessionName()?.trim();
+    const manager = filePath ? SessionManager.open(filePath) : undefined;
+    const currentName = (liveSession ? readLiveSessionName(liveSession) : undefined)
+      || manager?.getSessionName()?.trim();
     if (body.onlyIfUnnamed === true && currentName) {
       return NextResponse.json({ title: currentName, applied: false, skipped: true, usage: null });
     }
 
-    const cwd = manager.getHeader()?.cwd ?? process.cwd();
-    const existing = getRpcSession(id);
-    const { session } = existing?.isAlive()
-      ? { session: existing }
-      : await startRpcSession(id, filePath, cwd);
+    const cwd = manager?.getHeader()?.cwd ?? liveSession?.cwd ?? process.cwd();
+    const { session } = liveSession
+      ? { session: liveSession }
+      : await startRpcSession(id, filePath!, cwd);
 
     // globalThis keeps wrappers alive across dev hot reloads; older instances
     // may predate waitUntilReady(), but those have already completed startup.
@@ -95,6 +110,7 @@ export async function POST(
     const result = await generateSessionTitle(agentSession, {
       ...(typeof body.instructions === "string" ? { instructions: normalizeSessionTitlePrompt(body.instructions) } : {}),
       ...(typeof body.currentTitle === "string" ? { currentTitle: Array.from(body.currentTitle).slice(0, 200).join("") } : {}),
+      ...(seedQuery ? { seedQuery } : {}),
       ...(titleModel ? { model: titleModel } : {}),
       signal: req.signal,
     });
@@ -108,12 +124,15 @@ export async function POST(
 
     const apply = body.apply !== false;
     if (apply) {
-      // A manual rename may land while the model is generating. Re-read the
-      // append-only session file immediately before applying so automatic
-      // naming can never overwrite a title chosen by the user.
-      const latestName = body.onlyIfUnnamed === true
-        ? SessionManager.open(filePath).getSessionName()?.trim()
-        : undefined;
+      // A manual rename may land while the model is generating. Re-read both
+      // the live session state and the append-only session file immediately
+      // before applying so automatic naming never overwrites a user title.
+      let latestName: string | undefined;
+      if (body.onlyIfUnnamed === true) {
+        const latestFilePath = filePath ?? await resolveSessionPath(id);
+        latestName = readLiveSessionName(session)
+          || (latestFilePath ? SessionManager.open(latestFilePath).getSessionName()?.trim() : undefined);
+      }
       if (latestName) {
         return NextResponse.json({ title: latestName, applied: false, skipped: true, usage: result.usage ?? null });
       }

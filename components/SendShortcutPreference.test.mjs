@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [chatInput, settingsDialog, shortcutSettings, hook, autoScrollHook, roomComposer] = await Promise.all([
+const [chatInput, settingsDialog, conversationPage, settingsPrimitives, shortcutSettings, hook, autoScrollHook, roomComposer] = await Promise.all([
   readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
   readFile(new URL("./SettingsDialog.tsx", import.meta.url), "utf8"),
+  readFile(new URL("./settings/ConversationSettingsPage.tsx", import.meta.url), "utf8"),
+  readFile(new URL("./settings/SettingsPrimitives.tsx", import.meta.url), "utf8"),
   readFile(new URL("./ChatShortcutSettings.tsx", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useSendShortcut.ts", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useLiveOutputAutoScrollPreference.ts", import.meta.url), "utf8"),
@@ -46,8 +48,9 @@ test("legacy default steering settings and dropdown are removed", () => {
 });
 
 test("conversation settings expose a synchronized live-output auto-scroll switch", () => {
-  assert.match(settingsDialog, /aria-checked=\{liveOutputAutoScrollEnabled\}/);
-  assert.match(settingsDialog, /setLiveOutputAutoScrollEnabled\(!liveOutputAutoScrollEnabled\)/);
+  assert.match(settingsPrimitives, /aria-checked=\{checked\}/);
+  assert.match(conversationPage, /checked=\{autoScrollEnabled\}/);
+  assert.match(conversationPage, /setAutoScrollEnabled\(!autoScrollEnabled\)/);
   assert.match(autoScrollHook, /useSyncExternalStore/);
   assert.match(autoScrollHook, /LIVE_OUTPUT_AUTO_SCROLL_STORAGE_KEY/);
   assert.match(autoScrollHook, /window\.addEventListener\("storage"/);

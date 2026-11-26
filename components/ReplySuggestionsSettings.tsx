@@ -6,11 +6,13 @@ import { AliIcon } from "./AliIcon";
 import { defaultReplySettings, REPLY_DEFAULT_PROMPT, REPLY_MAX_PROMPT, unicodeLength, type ReplyResult } from "@/lib/reply-suggestions";
 import { readReplySettings, saveReplySettings } from "@/lib/reply-suggestions-settings";
 import { ReplySuggestionBar, replyErrorKey } from "./ReplySuggestionBar";
+import { SettingsModal, SettingsRow, SettingsSwitch } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import styles from "./ReplySuggestionBar.module.css";
 import settingsStyles from "./SettingsDialog.module.css";
 
 type Model = { id: string; provider: string; name: string };
-export function ReplySuggestionsSettings({ cwd }: { cwd?: string }) {
+export function ReplySuggestionsSettings({ cwd, compact = false }: { cwd?: string; compact?: boolean }) {
   const { t, locale } = useI18n();
   const [config, setConfig] = useState(defaultReplySettings);
   const [models, setModels] = useState<Model[]>([]), [filter, setFilter] = useState("");
@@ -19,6 +21,7 @@ export function ReplySuggestionsSettings({ cwd }: { cwd?: string }) {
   const [sample, setSample] = useState(() => t("reply.sampleText"));
   const [preview, setPreview] = useState<{ key: string; result?: ReplyResult; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const draft = useReplyDraft(() => ({ value: "", spans: [] }));
   const modelValue = config.model ? JSON.stringify(config.model) : "";
@@ -48,6 +51,123 @@ export function ReplySuggestionsSettings({ cwd }: { cwd?: string }) {
   };
   const candidates = models.filter((m) => `${m.provider} ${m.name} ${m.id}`.toLowerCase().includes(filter.toLowerCase()));
   const providers = [...new Set(candidates.map((m) => m.provider))];
+  const allProviders = [...new Set(models.map((m) => m.provider))];
+  if (compact) {
+    const canSaveCompact = validPrompt && (!config.enabled || !!config.model);
+    const toggleCompact = () => {
+      const next = { ...config, enabled: !config.enabled };
+      setConfig(next);
+      setStatus("");
+      if (!next.enabled || next.model) {
+        try { saveReplySettings(next); } catch { setStatus("reply.saveFailed"); }
+      } else {
+        setModalOpen(true);
+      }
+    };
+    return (
+      <>
+        <SettingsRow
+          title={t("reply.title")}
+          description={t("reply.description")}
+          badge={config.enabled && config.model ? `${config.model.provider}/${config.model.modelId}` : undefined}
+          settingsId="conversation.replySuggestions"
+          descriptionId="reply-compact-desc"
+        >
+          <select
+            className={primitiveStyles.select}
+            aria-label={t("reply.model")}
+            value={modelValue}
+            onChange={(e) => {
+              const model = e.target.value ? JSON.parse(e.target.value) : null;
+              const next = { ...config, model };
+              setConfig(next);
+              setStatus("");
+              if (!next.enabled || next.model) {
+                try { saveReplySettings(next); } catch { setStatus("reply.saveFailed"); }
+              }
+            }}
+          >
+            <option value="">{t("reply.chooseModel")}</option>
+            {config.model && !available && <option value={modelValue}>{config.model.provider}/{config.model.modelId}{` — ${t("reply.unavailable")}`}</option>}
+            {allProviders.map((provider) => (
+              <optgroup key={provider} label={provider}>
+                {models.filter((m) => m.provider === provider).map((m) => (
+                  <option key={m.id} value={JSON.stringify({ provider, modelId: m.id })}>{m.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button type="button" className={primitiveStyles.button} onClick={() => setModalOpen(true)}>
+            {t("settings.editAction")}
+          </button>
+          <SettingsSwitch
+            checked={config.enabled}
+            label={t("reply.enable")}
+            describedBy="reply-compact-desc"
+            onToggle={toggleCompact}
+          />
+        </SettingsRow>
+        <SettingsModal
+          open={modalOpen}
+          title={t("reply.title")}
+          description={t("reply.description")}
+          closeLabel={t("settings.closeAction")}
+          onClose={() => setModalOpen(false)}
+          footer={
+            <>
+              <button type="button" className={primitiveStyles.button} onClick={() => { setConfig({ ...config, systemPrompt: REPLY_DEFAULT_PROMPT }); setStatus(""); }}>
+                {t("reply.restore")}
+              </button>
+              <div className={primitiveStyles.modalActions}>
+                {status === "reply.saved" ? <span className={primitiveStyles.statusText}>{t("reply.saved")}</span> : null}
+                {status === "reply.saveFailed" ? <span className={primitiveStyles.statusError}>{t("reply.saveFailed")}</span> : null}
+                <button
+                  type="button"
+                  aria-label={t("reply.save")}
+                  className={primitiveStyles.buttonPrimary}
+                  disabled={!canSaveCompact}
+                  onClick={() => { try { saveReplySettings(config); setStatus("reply.saved"); } catch { setStatus("reply.saveFailed"); } }}
+                >
+                  {t("reply.save")}
+                </button>
+              </div>
+            </>
+          }
+        >
+          <div className={styles.settingsBody}>
+            <div className={styles.field}>
+              <label htmlFor="reply-model-filter">{t("reply.model")}</label>
+              <input id="reply-model-filter" type="search" value={filter} placeholder={t("reply.searchModels")} aria-label={t("reply.searchModels")} onChange={(e) => setFilter(e.target.value)} />
+              <select aria-label={t("reply.model")} value={modelValue} onChange={(e) => { setConfig({ ...config, model: e.target.value ? JSON.parse(e.target.value) : null }); setStatus(""); }}>
+                <option value="">{t("reply.chooseModel")}</option>
+                {config.model && !candidates.some((m) => m.id === config.model?.modelId && m.provider === config.model.provider) && <option value={modelValue}>{config.model.provider}/{config.model.modelId}{!available ? ` — ${t("reply.unavailable")}` : ""}</option>}
+                {providers.map((provider) => <optgroup key={provider} label={provider}>{candidates.filter((m) => m.provider === provider).map((m) => <option key={m.id} value={JSON.stringify({ provider, modelId: m.id })}>{m.name} · {m.id}</option>)}</optgroup>)}
+              </select>
+              {(modelsError || (config.model && !available)) && <small>{t("reply.unavailable")} <button type="button" className={styles.action} onClick={() => setCatalogAttempt((n) => n + 1)}>{t("reply.retry")}</button></small>}
+            </div>
+            <label className={styles.field}>
+              <span>{t("reply.prompt")} ({unicodeLength(config.systemPrompt).toLocaleString()} / 8,000)</span>
+              <small>{t("reply.promptHelp")}</small>
+              <textarea aria-label={t("reply.prompt")} value={config.systemPrompt} onChange={(e) => { setConfig({ ...config, systemPrompt: e.target.value }); setStatus(""); }} />
+            </label>
+            {!validPrompt && <p role="status" className={styles.note}>{t("reply.invalid")}</p>}
+            <details className={styles.test}><summary>{t("reply.preview")}</summary><div className={styles.settingsBody}>
+              <p className={styles.note}>{t("reply.previewHelp")}</p>
+              <label className={styles.field}><span>{t("reply.sample")}</span><textarea value={sample} onChange={(e) => setSample(e.target.value)} /></label>
+              <div><button type="button" className={primitiveStyles.button} disabled={testing || !available || !validPrompt || !sample.trim() || unicodeLength(sample) > 24_000} onClick={() => void test()}>{t("reply.test")}</button></div>
+              {preview && preview.key !== testKey && <p role="status" className={styles.note}>{t("reply.stalePreview")}</p>}
+              {preview?.key === testKey && <div>
+                {preview.error && <p role="alert" className={styles.note}>{t(replyErrorKey(preview.error))}</p>}
+                {preview.result?.groups.length === 0 && <p role="status" className={styles.note}>{t("reply.empty")}</p>}
+                <ReplySuggestionBar preview sourceKey={testKey} result={preview.result} draft={draft.draft} onChange={(next) => draft.commit(next)} />
+              </div>}
+              <textarea className={styles.previewDraft} aria-label={t("reply.previewDraft")} placeholder={t("reply.previewDraft")} value={draft.draft.value} onChange={(e) => draft.setValue(e.target.value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.nativeEvent.isComposing) { e.preventDefault(); draft.undo(e.shiftKey); } }} />
+            </div></details>
+          </div>
+        </SettingsModal>
+      </>
+    );
+  }
   return <section className={settingsStyles.promptCard} aria-labelledby="reply-settings-heading">
     <header className={settingsStyles.promptCardHeader}><h3 data-settings-id="conversation.replySuggestions" id="reply-settings-heading">{t("reply.title")}</h3><p>{t("reply.description")}</p></header>
     <div className={`${settingsStyles.promptCardBody} ${styles.settingsBody}`}>

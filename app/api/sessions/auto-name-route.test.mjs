@@ -165,3 +165,111 @@ test("cancelling the title request aborts generation and leaves the session unna
   assert.equal(signal.aborted, true);
   assert.equal(session.readTitle(), undefined);
 });
+
+test("automatic session naming names a live unpersisted session immediately from seedQuery without waiting for idle", { timeout: 10_000 }, async (t) => {
+  const tempRoot = await realpath(tmpdir());
+  const directory = await mkdtemp(join(tempRoot, "piora-auto-name-live-"));
+  const previousSessions = globalThis.__piSessions;
+  const sessionId = "live-unpersisted-session";
+  const releaseTitle = Promise.withResolvers();
+  const generationStarted = Promise.withResolvers();
+  let pending;
+
+  t.after(async () => {
+    releaseTitle.resolve();
+    await pending?.catch(() => {});
+    globalThis.__piSessions = previousSessions;
+    invalidateSessionPathCache(sessionId);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const manager = SessionManager.create(directory, join(directory, "sessions"));
+  const streamTitle = t.mock.fn(async (model) => {
+    const stream = createAssistantMessageEventStream();
+    generationStarted.resolve();
+    await releaseTitle.promise;
+    const { total, ...tokens } = usage;
+    stream.end({
+      role: "assistant",
+      content: [{ type: "text", text: generatedTitle }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: { ...tokens, totalTokens: total, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    });
+    return stream;
+  });
+
+  const agent = new Agent({ initialState: { model: chatModel, messages: [] }, streamFn: streamTitle });
+  agent.waitForIdle = () => new Promise(() => {});
+  globalThis.__piSessions = new Map([[sessionId, {
+    cwd: directory,
+    isAlive: () => true,
+    inner: {
+      agent,
+      sessionManager: manager,
+      modelRuntime: { getModel: () => undefined },
+    },
+    setSessionName: (name) => manager.appendSessionInfo(name),
+  }]]);
+
+  const url = `http://localhost/api/sessions/${sessionId}/auto-name`;
+  const context = { params: Promise.resolve({ id: sessionId }) };
+  const headers = { "Content-Type": "application/json" };
+
+  const invalidSeed = await POST(new Request(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ seedQuery: 123 }),
+  }), context);
+  assert.equal(invalidSeed.status, 400);
+
+  pending = POST(new Request(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ onlyIfUnnamed: true, apply: true, seedQuery: "修复鸿蒙投屏断联问题" }),
+  }), context);
+  await generationStarted.promise;
+
+  // Live unpersisted session completes without waiting for idle or disk file.
+  releaseTitle.resolve();
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { title: generatedTitle, applied: true, skipped: false, usage });
+  assert.equal(manager.getSessionName(), generatedTitle);
+
+  // Manual live rename while a subsequent generation is in flight is preserved.
+  const renameRace = Promise.withResolvers();
+  const streamRace = t.mock.fn(async (model) => {
+    const stream = createAssistantMessageEventStream();
+    await renameRace.promise;
+    const { total, ...tokens } = usage;
+    stream.end({
+      role: "assistant",
+      content: [{ type: "text", text: "Should Not Overwrite" }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: { ...tokens, totalTokens: total, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    });
+    return stream;
+  });
+  agent.streamFunction = streamRace;
+  manager.appendSessionInfo("");
+  const racePending = POST(new Request(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ onlyIfUnnamed: true, apply: true, seedQuery: "另一条查询" }),
+  }), context);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  manager.appendSessionInfo("用户手动命名");
+  renameRace.resolve();
+  const raceResponse = await racePending;
+  assert.equal(raceResponse.status, 200);
+  assert.deepEqual(await raceResponse.json(), { title: "用户手动命名", applied: false, skipped: true, usage });
+  assert.equal(manager.getSessionName(), "用户手动命名");
+});

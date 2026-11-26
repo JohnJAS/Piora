@@ -8,7 +8,9 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_TITLE_PROMPT,
+  buildQuerySessionTitlePrompt,
   buildSessionTitleRequest,
+  normalizeSessionTitlePrompt,
 } from "./session-title-prompt";
 
 const TITLE_TIMEOUT_MS = 90_000;
@@ -74,6 +76,38 @@ export function buildSessionTitleAgentOptions(
     steeringMode: source.steeringMode,
     followUpMode: source.followUpMode,
     sessionId: source.sessionId,
+    thinkingBudgets: source.thinkingBudgets,
+    transport: source.transport,
+    maxRetryDelayMs: source.maxRetryDelayMs,
+    toolExecution: source.toolExecution,
+  };
+}
+
+/**
+ * Build a minimal standalone Agent configuration for immediate title generation
+ * from the opening user query, running in parallel with the main turn without
+ * sending the full session system prompt, tool schemas, or message history.
+ */
+export function buildQuerySessionTitleAgentOptions(
+  source: Agent,
+  options: { model?: Model<Api>; instructions?: string } = {},
+): AgentOptions {
+  return {
+    initialState: {
+      systemPrompt: normalizeSessionTitlePrompt(options.instructions),
+      model: options.model ?? source.state.model,
+      thinkingLevel: "off",
+      tools: [],
+      messages: [],
+    },
+    convertToLlm: source.convertToLlm,
+    streamFn: source.streamFunction,
+    getApiKey: source.getApiKey,
+    onPayload: source.onPayload,
+    onResponse: source.onResponse,
+    steeringMode: source.steeringMode,
+    followUpMode: source.followUpMode,
+    sessionId: source.sessionId ? `${source.sessionId}:title` : undefined,
     thinkingBudgets: source.thinkingBudgets,
     transport: source.transport,
     maxRetryDelayMs: source.maxRetryDelayMs,
@@ -228,25 +262,40 @@ export async function generateSessionTitle(
   request: {
     instructions?: string;
     currentTitle?: string;
+    seedQuery?: string;
     model?: Model<Api>;
     signal?: AbortSignal;
   } = {},
 ): Promise<GeneratedSessionTitle> {
   const sourceAgent = source.agent;
-  await waitForAbortable(sourceAgent.waitForIdle(), request.signal);
+  const seedQuery = request.seedQuery?.trim();
+  let agentOptions: AgentOptions;
+  let historyLength = 0;
+  let titleRequest: string;
+  let continuesFromTrailingUser = false;
 
-  const sanitizedMessages = sanitizeTitleMessages(sourceAgent.state.messages);
-  const historyLength = sanitizedMessages.length;
-  if (!sanitizedMessages.some((message) => message.role === "user")) {
-    throw new Error("The session has no user messages to name");
-  }
+  if (seedQuery) {
+    agentOptions = buildQuerySessionTitleAgentOptions(sourceAgent, {
+      model: request.model,
+      instructions: request.instructions,
+    });
+    titleRequest = buildQuerySessionTitlePrompt(seedQuery, request.currentTitle);
+  } else {
+    await waitForAbortable(sourceAgent.waitForIdle(), request.signal);
 
-  const titleRequest = buildSessionTitleRequest(request.instructions ?? SESSION_TITLE_PROMPT, request.currentTitle);
-  const agentOptions = buildSessionTitleAgentOptions(sourceAgent, { model: request.model });
-  agentOptions.initialState!.messages = sanitizedMessages;
-  const continuesFromTrailingUser = sanitizedMessages.at(-1)?.role === "user";
-  if (continuesFromTrailingUser) {
-    agentOptions.initialState!.messages = appendTitleRequestToTrailingUser(sanitizedMessages, titleRequest);
+    const sanitizedMessages = sanitizeTitleMessages(sourceAgent.state.messages);
+    historyLength = sanitizedMessages.length;
+    if (!sanitizedMessages.some((message) => message.role === "user")) {
+      throw new Error("The session has no user messages to name");
+    }
+
+    titleRequest = buildSessionTitleRequest(request.instructions ?? SESSION_TITLE_PROMPT, request.currentTitle);
+    agentOptions = buildSessionTitleAgentOptions(sourceAgent, { model: request.model });
+    agentOptions.initialState!.messages = sanitizedMessages;
+    continuesFromTrailingUser = sanitizedMessages.at(-1)?.role === "user";
+    if (continuesFromTrailingUser) {
+      agentOptions.initialState!.messages = appendTitleRequestToTrailingUser(sanitizedMessages, titleRequest);
+    }
   }
 
   const temporaryAgent = new Agent(agentOptions);

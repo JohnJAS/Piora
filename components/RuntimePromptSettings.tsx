@@ -11,6 +11,8 @@ import {
   type RuntimePromptSettingsPatch,
 } from "@/lib/prompt-runtime/types";
 import { ModelErrorText } from "./ModelErrorText";
+import { SettingsDisclosure, SettingsRow, SettingsSection, SettingsSwitch } from "./settings/SettingsPrimitives";
+import primitiveStyles from "./settings/SettingsPrimitives.module.css";
 import dialogStyles from "./SettingsDialog.module.css";
 import styles from "./RuntimePromptSettings.module.css";
 
@@ -31,7 +33,7 @@ function mergeSettings(base: RuntimePromptSettings, data: Partial<RuntimePromptS
   return next;
 }
 
-export function RuntimePromptSettings() {
+export function RuntimePromptSettings({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<RuntimePromptSettings>(() => createDefaultRuntimePromptSettings());
   const [ready, setReady] = useState(false);
@@ -83,6 +85,92 @@ export function RuntimePromptSettings() {
   const toggleExtension = (key: RuntimePromptExtensionKey) => {
     void applyPatch({ extensions: { [key]: !settings.extensions[key] } });
   };
+
+  if (compact) {
+    const enabledCount = RUNTIME_PROMPT_EXTENSION_KEYS.filter((key) => settings.extensions[key]).length;
+    return (
+      <div data-settings-id="conversation.runtimePrompt" aria-label={t("runtimePrompt.title")}>
+        <SettingsSection
+          title={t("runtimePrompt.title")}
+          actions={
+            <>
+              <button
+                type="button"
+                className={primitiveStyles.button}
+                disabled={busy}
+                onClick={() => void applyPatch(createCliAlignedPresetSettings())}
+              >
+                {t("runtimePrompt.presetAlignCli")}
+              </button>
+              <button
+                type="button"
+                className={primitiveStyles.button}
+                disabled={busy}
+                onClick={() => void applyPatch(createDefaultRuntimePromptSettings())}
+              >
+                {t("runtimePrompt.presetDefault")}
+              </button>
+            </>
+          }
+        >
+          {error ? (
+            <div style={{ padding: "8px 16px" }}>
+              <p role="alert" className={primitiveStyles.statusError}><ModelErrorText value={error} /></p>
+            </div>
+          ) : null}
+          <SettingsRow
+            title={t("runtimePrompt.mergeCompact.title")}
+            description={t("runtimePrompt.mergeCompact.description")}
+            descriptionId="runtimePrompt-mergeCompact-desc"
+          >
+            <SettingsSwitch
+              checked={settings.mergeCompact}
+              disabled={busy}
+              label={t("runtimePrompt.mergeCompact.title")}
+              describedBy="runtimePrompt-mergeCompact-desc"
+              onToggle={() => void applyPatch({ mergeCompact: !settings.mergeCompact })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={t("runtimePrompt.alignCliCompaction.title")}
+            description={t("runtimePrompt.alignCliCompaction.description")}
+            descriptionId="runtimePrompt-alignCliCompaction-desc"
+          >
+            <SettingsSwitch
+              checked={settings.alignCliCompaction}
+              disabled={busy}
+              label={t("runtimePrompt.alignCliCompaction.title")}
+              describedBy="runtimePrompt-alignCliCompaction-desc"
+              onToggle={() => void applyPatch({ alignCliCompaction: !settings.alignCliCompaction })}
+            />
+          </SettingsRow>
+          <SettingsDisclosure
+            summary={t("runtimePrompt.extensionsGroup")}
+            meta={`${enabledCount} / ${RUNTIME_PROMPT_EXTENSION_KEYS.length}`}
+          >
+            <div style={{ display: "grid", gap: 4 }}>
+              {RUNTIME_PROMPT_EXTENSION_KEYS.map((key) => {
+                const title = t(`runtimePrompt.ext.${key}.title`);
+                const description = t(`runtimePrompt.ext.${key}.description`);
+                const descId = `runtimePrompt-ext-${key}-desc`;
+                return (
+                  <SettingsRow key={key} title={title} description={description} descriptionId={descId}>
+                    <SettingsSwitch
+                      checked={settings.extensions[key]}
+                      disabled={busy}
+                      label={title}
+                      describedBy={descId}
+                      onToggle={() => toggleExtension(key)}
+                    />
+                  </SettingsRow>
+                );
+              })}
+            </div>
+          </SettingsDisclosure>
+        </SettingsSection>
+      </div>
+    );
+  }
 
   return (
     <section

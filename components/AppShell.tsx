@@ -70,6 +70,7 @@ import { SideChatSwitcherPopover } from "./side-chat/SideChatSwitcherPopover";
 import { SideChatCloseConfirmDialog } from "./side-chat/SideChatCloseConfirmDialog";
 import { dispatchFocusSideChatComposer, parseSideChatTabId, type SideChatTabId } from "./side-chat/side-chat-events";
 import sideChatStyles from "./side-chat/SideChat.module.css";
+import { extractEarlySessionTitleQuery } from "@/lib/session-title-prompt";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { fetchSessionMetadata } from "@/lib/session-catalog-client";
@@ -162,8 +163,7 @@ const AppearanceSettings = dynamic(() => import("./AppearanceSettings").then((mo
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
 const SpeechSettings = dynamic(() => import("./SpeechSettings").then((module) => module.SpeechSettings), { ssr: false });
 const UsageStatsPanel = dynamic(() => import("./UsageStatsPanel").then((module) => module.UsageStatsPanel), { ssr: false });
-const TrashSettings = dynamic(() => import("./TrashSettings").then((module) => module.TrashSettings), { ssr: false });
-const ArchivedChatsSettings = dynamic(() => import("./ArchivedChatsSettings").then((module) => module.ArchivedChatsSettings), { ssr: false });
+const ChatStorageSettingsPage = dynamic(() => import("./settings/ChatStorageSettingsPage").then((module) => module.ChatStorageSettingsPage), { ssr: false });
 const AutomationPanel = dynamic(() => import("./AutomationPanel").then((module) => module.AutomationPanel), { ssr: false });
 const SessionHistoryWorkbench = dynamic(() => import("./SessionHistoryWorkbench").then((module) => module.SessionHistoryWorkbench), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
@@ -1437,23 +1437,14 @@ export function AppShell() {
     void fetchSessionMetadata([sessionId])
       .then(([full]) => {
         if (!full) return;
-        setSelectedSession((prev) => (prev && prev.id === sessionId && !prev.projectRoot ? full : prev));
+        setSelectedSession((prev) => (prev && prev.id === sessionId && !prev.projectRoot
+          ? { ...full, ...(prev.name && !full.name ? { name: prev.name } : {}) }
+          : prev));
       })
       .catch(() => {});
   }, []);
 
-  // Called by ChatWindow when a new session gets its real id from pi
-  const handleSessionCreated = useCallback((session: SessionInfo) => {
-    setNewSessionCwd(null);
-    setNewSessionInitialModel(null);
-    setNewSessionInitialPrompt(null);
-    setSelectedSession(session);
-    setRefreshKey((k) => k + 1);
-    hydrateSelectedSession(session.id);
-    replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}`);
-  }, [hydrateSelectedSession]);
-
-  const optimizeUnnamedSessionTitle = useCallback(async (sessionId: string) => {
+  const optimizeUnnamedSessionTitle = useCallback(async (sessionId: string, options?: { seedQuery?: string }) => {
     if (automaticTitleRequestsRef.current.has(sessionId)) return;
     automaticTitleRequestsRef.current.add(sessionId);
     try {
@@ -1464,6 +1455,7 @@ export function AppShell() {
         body: JSON.stringify({
           onlyIfUnnamed: true,
           instructions: readSessionTitlePrompt(window.localStorage),
+          ...(options?.seedQuery ? { seedQuery: options.seedQuery } : {}),
           ...(titleModel ?? {}),
         }),
       });
@@ -1479,6 +1471,21 @@ export function AppShell() {
       console.warn("Automatic session title optimization failed:", error);
     }
   }, []);
+
+  // Called by ChatWindow when a new session gets its real id from pi
+  const handleSessionCreated = useCallback((session: SessionInfo) => {
+    setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
+    setSelectedSession(session);
+    setRefreshKey((k) => k + 1);
+    hydrateSelectedSession(session.id);
+    replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}`);
+    if (!session.name?.trim()) {
+      const seedQuery = extractEarlySessionTitleQuery(session.firstMessage);
+      if (seedQuery) void optimizeUnnamedSessionTitle(session.id, { seedQuery });
+    }
+  }, [hydrateSelectedSession, optimizeUnnamedSessionTitle]);
 
   useEffect(() => {
     const running = new Set(runningTaskSnapshots.filter((snapshot) => snapshot.runtime !== "idle").map((snapshot) => snapshot.id));
@@ -2265,9 +2272,9 @@ export function AppShell() {
         usage: (
           <UsageStatsPanel />
         ),
-        trash: <TrashSettings onChanged={() => setRefreshKey((key) => key + 1)} />,
         archived: (
-          <ArchivedChatsSettings
+          <ChatStorageSettingsPage
+            initialTab={settingsKey === "trash" || settingsItemId === "trash" ? "trash" : "archived"}
             onChanged={() => setRefreshKey((key) => key + 1)}
             onSessionDeleted={handleSessionDeleted}
           />

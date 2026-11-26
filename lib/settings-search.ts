@@ -11,40 +11,42 @@ export interface SettingsPage {
 
 export const SETTINGS_GROUPS: readonly { labelKey: string; pages: readonly SettingsPage[] }[] = [
   { labelKey: "settings.group.experience", pages: [
+    { key: "general", labelKey: "settings.page.app", descriptionKey: "settings.page.appDescription", icon: "layout" },
     { key: "appearance", labelKey: "settings.page.appearance", descriptionKey: "settings.appearanceDescription", icon: "skin" },
     { key: "conversation", labelKey: "settings.conversation", descriptionKey: "settings.conversationDescription", icon: "message" },
+    { key: "prompts", labelKey: "settings.page.prompts", descriptionKey: "settings.page.promptsDescription", icon: "solution" },
     { key: "shortcuts", labelKey: "settings.shortcuts", descriptionKey: "settings.shortcutsDescription", icon: "setting" },
-    { key: "speech", labelKey: "speech.title", descriptionKey: "speech.description", icon: "microphone" },
-    { key: "companion", labelKey: "companion.settingsTitle", descriptionKey: "settings.companionDescription", icon: "robot" },
   ] },
   { labelKey: "settings.group.modelWorkflow", pages: [
     { key: "models", labelKey: "settings.page.models", descriptionKey: "settings.modelsDescription", icon: "api" },
-    { key: "automations", labelKey: "automations.title", descriptionKey: "automations.description", icon: "calendar" },
     { key: "shell", labelKey: "shell.title", descriptionKey: "shell.description", icon: "code" },
+    { key: "automations", labelKey: "automations.title", descriptionKey: "automations.description", icon: "calendar" },
+    { key: "speech", labelKey: "speech.title", descriptionKey: "speech.description", icon: "microphone" },
   ] },
   { labelKey: "settings.group.capabilities", pages: [
     { key: "tools", labelKey: "projectTools.title", descriptionKey: "projectTools.description", icon: "build" },
     { key: "extensions", labelKey: "settings.extensions", descriptionKey: "settings.manageExtensionsDescription", icon: "package" },
-    { key: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", icon: "robot" },
     { key: "plugins", labelKey: "common.plugins", descriptionKey: "settings.pluginsDescription", icon: "package" },
     { key: "skills", labelKey: "common.skills", descriptionKey: "settings.skillsDescription", icon: "solution" },
+    { key: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", icon: "robot" },
   ] },
   { labelKey: "settings.group.connections", pages: [
     { key: "browser", labelKey: "browserPreferences.title", descriptionKey: "browserPreferences.description", icon: "earth" },
     { key: "network", labelKey: "networkProxy.title", descriptionKey: "networkProxy.description", icon: "link" },
+    { key: "companion", labelKey: "companion.settingsTitle", descriptionKey: "settings.companionDescription", icon: "robot" },
   ] },
   { labelKey: "settings.group.appData", pages: [
-    { key: "general", labelKey: "settings.page.app", descriptionKey: "settings.page.appDescription", icon: "layout" },
     { key: "laboratory", labelKey: "laboratory.title", descriptionKey: "laboratory.description", icon: "rocket" },
     { key: "data", labelKey: "settings.page.data", descriptionKey: "settings.page.dataDescription", icon: "database" },
     { key: "usage", labelKey: "usage.title", descriptionKey: "usage.description", icon: "chart-no-axes-column" },
-    { key: "archived", labelKey: "archive.title", descriptionKey: "archive.description", icon: "archive" },
-    { key: "trash", labelKey: "trash.title", descriptionKey: "trash.description", icon: "archive" },
+    { key: "archived", labelKey: "settings.page.history", descriptionKey: "settings.page.historyDescription", icon: "archive" },
   ] },
 ];
 
 export function normalizeSettingsKey(key: SettingsKey): SettingsKey {
-  return key === "prompts" || key === "modelRuntime" ? "conversation" : key;
+  if (key === "modelRuntime") return "conversation";
+  if (key === "trash") return "archived";
+  return key;
 }
 
 export function resolveSettingsPage(key: SettingsKey): SettingsPage {
@@ -101,12 +103,13 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "conversation.newlineShortcut", section: "shortcuts", labelKey: "settings.newlineShortcut", descriptionKey: "settings.newlineShortcutDescription", keywords: ["newline", "shift enter", "换行", "快捷键"] },
   { id: "conversation.autoScroll", section: "conversation", labelKey: "settings.liveOutputAutoScroll", descriptionKey: "settings.liveOutputAutoScrollDescription", keywords: ["scroll", "follow", "滚动", "跟随"] },
   { id: "conversation.notifications", section: "conversation", labelKey: "taskControls.notifications", descriptionKey: "taskControls.notificationsDescription", keywords: ["notify", "notification", "通知", "完成"] },
-  { id: "conversation.promptOptimizer", section: "conversation", labelKey: "settings.promptOptimizerTitle", descriptionKey: "settings.promptOptimizerDescription", keywords: ["prompt", "rewrite", "提示词", "优化"] },
-  { id: "conversation.titleModel", section: "conversation", labelKey: "settings.sessionTitleModelTitle", descriptionKey: "settings.sessionTitleModelDescription", keywords: ["title", "model", "标题", "模型"] },
-  { id: "conversation.systemPrompt", section: "conversation", labelKey: "system.prompt", descriptionKey: "system.description", keywords: ["system prompt", "instruction", "系统提示词", "指令"] },
+  { id: "prompts", section: "prompts", labelKey: "settings.page.prompts", descriptionKey: "settings.page.promptsDescription", keywords: ["prompt", "system", "title", "optimizer", "instructions", "提示词", "指令", "标题"] },
+  { id: "conversation.promptOptimizer", section: "prompts", labelKey: "settings.promptOptimizerTitle", descriptionKey: "settings.promptOptimizerDescription", keywords: ["prompt", "rewrite", "提示词", "优化"] },
+  { id: "conversation.titleModel", section: "prompts", labelKey: "settings.sessionTitleModelTitle", descriptionKey: "settings.sessionTitleModelDescription", keywords: ["title", "model", "标题", "模型"] },
+  { id: "conversation.systemPrompt", section: "prompts", labelKey: "system.prompt", descriptionKey: "system.description", keywords: ["system prompt", "instruction", "系统提示词", "指令"] },
   {
     id: "conversation.runtimePrompt",
-    section: "conversation",
+    section: "prompts",
     labelKey: "runtimePrompt.title",
     descriptionKey: "runtimePrompt.description",
     keywords: ["extension", "prompt", "cli", "merge", "compact", "compaction", "guidance", "rules", "扩展", "说明", "合并", "压缩", "对齐", "冲突", "提示词"],
@@ -151,8 +154,8 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "companion.model", section: "companion", labelKey: "companion.model.title", descriptionKey: "companion.model.description", keywords: ["interaction", "model", "互动", "模型"] },
 
   { id: "usage", section: "usage", labelKey: "usage.title", descriptionKey: "usage.description", keywords: ["token", "statistics", "usage", "monthly", "daily", "dashboard", "用量", "统计", "月度", "每日", "看板"] },
-  { id: "trash", section: "trash", labelKey: "trash.title", descriptionKey: "trash.description", keywords: ["deleted", "restore", "回收站", "删除", "恢复"] },
-  { id: "archived", section: "archived", labelKey: "archive.title", descriptionKey: "archive.description", keywords: ["history", "restore", "archive", "归档", "恢复"] },
+  { id: "trash", section: "archived", labelKey: "trash.title", descriptionKey: "trash.description", keywords: ["deleted", "restore", "回收站", "删除", "恢复"] },
+  { id: "archived", section: "archived", labelKey: "settings.page.history", descriptionKey: "settings.page.historyDescription", keywords: ["history", "restore", "archive", "归档", "恢复"] },
 ];
 
 export function filterSettingsSearchItems(
