@@ -61,6 +61,7 @@ test("deriveParentStatus maps parent runtime and attention phases accurately", (
 
 test("UI surfaces wire Side Chat cleanly across settings, composer, queue, history, and RightPanel", () => {
   const labsSource = readFileSync(new URL("../LaboratorySettings.tsx", import.meta.url), "utf8");
+  const primitivesSource = readFileSync(new URL("../settings/SettingsPrimitives.tsx", import.meta.url), "utf8");
   const workflowHookSource = readFileSync(new URL("../workflow/useComposerWorkflow.ts", import.meta.url), "utf8");
   const rightPanelSource = readFileSync(new URL("../workspace/RightPanel.tsx", import.meta.url), "utf8");
   const chatWindowSource = readFileSync(new URL("../ChatWindow.tsx", import.meta.url), "utf8");
@@ -68,7 +69,8 @@ test("UI surfaces wire Side Chat cleanly across settings, composer, queue, histo
   const commandCardSource = readFileSync(new URL("../ChatCommandCard.tsx", import.meta.url), "utf8");
   const appShellSource = readFileSync(new URL("../AppShell.tsx", import.meta.url), "utf8");
 
-  assert.match(labsSource, /data-testid="laboratory-side-chat-toggle"/);
+  assert.match(labsSource, /testId="laboratory-side-chat-toggle"/);
+  assert.match(primitivesSource, /data-testid=\{testId\}/);
   assert.match(labsSource, /useSideChatSettings/);
   assert.match(workflowHookSource, /sidechat:open/);
   assert.match(workflowHookSource, /parseSideSlashTrigger/);

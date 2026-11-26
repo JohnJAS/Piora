@@ -198,7 +198,7 @@ export function SmartShellSettings({ cwd }: { cwd?: string }) {
 
         <SettingsRow
           title={t("shell.history")}
-          description={t("shell.historyShort")}
+          description={t("shell.nativeHistoryHint")}
           settingsId="shell.history"
         />
       </SettingsSection>

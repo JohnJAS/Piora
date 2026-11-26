@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -138,6 +139,23 @@ export async function readPromptFileChanges(sessionId: string): Promise<PromptFi
   } catch { return null; }
 }
 
+function canonicalPath(target: string): string {
+  const resolved = path.resolve(target);
+  let probe = resolved;
+  const trailing: string[] = [];
+  while (true) {
+    try {
+      const real = realpathSync.native(probe);
+      return trailing.length > 0 ? path.join(real, ...trailing.reverse()) : real;
+    } catch {
+      const parent = path.dirname(probe);
+      if (parent === probe) return resolved;
+      trailing.push(path.basename(probe));
+      probe = parent;
+    }
+  }
+}
+
 function safeAbsolute(root: string, relative: string): string | null {
   const absolute = path.resolve(root, relative);
   const fromRoot = path.relative(root, absolute);
@@ -167,7 +185,7 @@ async function fingerprint(file: string, budget: { remaining: number; partial: b
 async function gitRoot(cwd: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { timeout: 8000 });
-    return path.resolve(stdout.trim());
+    return canonicalPath(stdout.trim());
   } catch { return null; }
 }
 
@@ -268,7 +286,7 @@ async function plainSnapshot(root: string, extraPaths: Iterable<string> = []): P
 
 async function snapshot(cwd: string, initial?: Snapshot, touchedPaths?: ReadonlySet<string>): Promise<Snapshot> {
   const discoveredGitRoot = initial ? null : await gitRoot(cwd);
-  const root = initial?.root ?? discoveredGitRoot ?? path.resolve(cwd);
+  const root = initial?.root ?? discoveredGitRoot ?? canonicalPath(cwd);
   const git = initial?.git ?? discoveredGitRoot !== null;
   if (git) {
     return gitSnapshot(root, touchedPaths ?? [], initial?.dirtyPaths);
@@ -282,9 +300,10 @@ export async function recordPromptFileTouch(sessionId: string, rawPath: string, 
   if (!capture || !active || active.runId !== capture.identity.runId || active.status !== "running") return;
   const trimmed = rawPath.trim();
   if (!trimmed) return;
-  const baseCwd = path.resolve(cwd || capture.cwd);
-  const candidate = path.resolve(baseCwd, trimmed);
-  const allowedRoot = capture.initialSettled?.root ?? path.resolve(capture.cwd);
+  const baseCwd = canonicalPath(cwd || capture.cwd);
+  const candidate = canonicalPath(path.resolve(baseCwd, trimmed));
+  const initialSnap = capture.initialSettled ?? await capture.initial.catch(() => undefined);
+  const allowedRoot = initialSnap?.root ?? canonicalPath(capture.cwd);
   const relativeFromRoot = path.relative(allowedRoot, candidate);
   if (!relativeFromRoot || relativeFromRoot === ".." || relativeFromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeFromRoot)) {
     return;
@@ -293,7 +312,6 @@ export async function recordPromptFileTouch(sessionId: string, rawPath: string, 
   capture.touchedPaths.add(candidate);
   capture.liveCache = undefined;
   if (firstTouch && !capture.touchedBaselines.has(candidate)) {
-    const initialSnap = capture.initialSettled ?? await capture.initial.catch(() => undefined);
     const existing = initialSnap?.versions.get(candidate);
     if (existing !== undefined) {
       capture.touchedBaselines.set(candidate, existing);
