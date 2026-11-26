@@ -25,7 +25,9 @@ interface Draft {
 }
 
 function secondsOf(ms: number | null): string {
-  return ms === null ? "" : String(Math.round(ms / 1000));
+  if (ms === null) return "";
+  if (ms === 0) return "0";
+  return String(Math.max(1, Math.round(ms / 1000)));
 }
 
 function toDraft(settings: LoadedSettings): Draft {
@@ -35,8 +37,8 @@ function toDraft(settings: LoadedSettings): Draft {
     baseDelayMs: String(settings.baseDelayMs),
     providerTimeout: secondsOf(settings.provider.timeoutMs),
     providerRetries: settings.provider.maxRetries === null ? "" : String(settings.provider.maxRetries),
-    providerDelay: String(Math.round(settings.provider.maxRetryDelayMs / 1000)),
-    idleTimeout: String(Math.round(settings.httpIdleTimeoutMs / 1000)),
+    providerDelay: secondsOf(settings.provider.maxRetryDelayMs),
+    idleTimeout: secondsOf(settings.httpIdleTimeoutMs),
   };
 }
 
@@ -149,12 +151,12 @@ export function ModelRetrySettings() {
           </label>
           <label>
             <span>{t("modelRetry.providerTimeout")}</span>
-            <input type="number" min={1} max={3600} value={draft.providerTimeout} disabled={busy} onChange={(event) => update({ providerTimeout: event.target.value })} />
+            <input type="number" min={1} max={3600} step={1} value={draft.providerTimeout} disabled={busy} onChange={(event) => update({ providerTimeout: event.target.value })} />
             <small>{t("modelRetry.providerTimeoutHint")}</small>
           </label>
           <label>
             <span>{t("modelRetry.idleTimeout")}</span>
-            <input type="number" min={0} max={3600} value={draft.idleTimeout} disabled={busy} onChange={(event) => update({ idleTimeout: event.target.value })} />
+            <input type="number" min={0} max={3600} step={1} value={draft.idleTimeout} disabled={busy} onChange={(event) => update({ idleTimeout: event.target.value })} />
             <small>{t("modelRetry.idleTimeoutHint")}</small>
           </label>
           <label>
@@ -164,7 +166,7 @@ export function ModelRetrySettings() {
           </label>
           <label>
             <span>{t("modelRetry.providerDelay")}</span>
-            <input type="number" min={0} max={300} value={draft.providerDelay} disabled={busy} onChange={(event) => update({ providerDelay: event.target.value })} />
+            <input type="number" min={0} max={300} step={1} value={draft.providerDelay} disabled={busy} onChange={(event) => update({ providerDelay: event.target.value })} />
           </label>
         </div>
       ) : null}

@@ -11,6 +11,7 @@ import {
 } from "./network-proxy";
 
 export const DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000;
+const MIN_NONZERO_HTTP_IDLE_TIMEOUT_MS = 1_000;
 
 type DispatcherGlobal = typeof globalThis & {
   __piWebHttpDispatcherConfigured?: boolean;
@@ -39,7 +40,11 @@ function parseHttpIdleTimeoutMs(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return undefined;
   }
-  return Math.floor(value);
+  const normalized = Math.floor(value);
+  if (normalized > 0 && normalized < MIN_NONZERO_HTTP_IDLE_TIMEOUT_MS) {
+    return undefined;
+  }
+  return normalized;
 }
 
 /** Keep startup and later proxy changes aligned with the saved global timeout. */

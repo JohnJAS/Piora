@@ -80,6 +80,7 @@ const LIMITS = {
   providerMaxRetryDelayMs: [0, 300_000],
   httpIdleTimeoutMs: [0, 3_600_000],
 } as const;
+const MIN_NONZERO_HTTP_IDLE_TIMEOUT_MS = 1_000;
 
 function requireInt(value: unknown, field: string, range: readonly [number, number]): number {
   const numeric = typeof value === "number" ? value : Number(value);
@@ -98,6 +99,10 @@ export function parseModelRetrySettings(input: unknown): ModelRetrySettings {
   const body = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const provider = (body.provider && typeof body.provider === "object" ? body.provider : {}) as Record<string, unknown>;
   if (typeof body.enabled !== "boolean") throw new TypeError("enabled must be a boolean");
+  const httpIdleTimeoutMs = requireInt(body.httpIdleTimeoutMs, "httpIdleTimeoutMs", LIMITS.httpIdleTimeoutMs);
+  if (httpIdleTimeoutMs > 0 && httpIdleTimeoutMs < MIN_NONZERO_HTTP_IDLE_TIMEOUT_MS) {
+    throw new TypeError(`httpIdleTimeoutMs must be 0 or between ${MIN_NONZERO_HTTP_IDLE_TIMEOUT_MS} and ${LIMITS.httpIdleTimeoutMs[1]}`);
+  }
   return {
     enabled: body.enabled,
     maxRetries: requireInt(body.maxRetries, "maxRetries", LIMITS.maxRetries),
@@ -107,7 +112,7 @@ export function parseModelRetrySettings(input: unknown): ModelRetrySettings {
       maxRetries: optionalInt(provider.maxRetries, "provider.maxRetries", LIMITS.providerMaxRetries),
       maxRetryDelayMs: requireInt(provider.maxRetryDelayMs, "provider.maxRetryDelayMs", LIMITS.providerMaxRetryDelayMs),
     },
-    httpIdleTimeoutMs: requireInt(body.httpIdleTimeoutMs, "httpIdleTimeoutMs", LIMITS.httpIdleTimeoutMs),
+    httpIdleTimeoutMs,
   };
 }
 

@@ -2536,6 +2536,7 @@ export const enLocale: LocalePlugin = {
     "chat.modelOutputBudgetError": "Maximum output tokens reach or exceed the allowed context budget. Lower Max Output Tokens in model settings and verify the context window matches the provider's actual limit; also check advanced parameters or extensions that override the output limit.",
     "chat.modelFirstEventTimeout": "The model sent no response data within {seconds} seconds. Check your connection or provider, then retry the message. Request timeouts and automatic retries are configurable in Settings > General.",
     "chat.modelStreamTimeout": "The model stopped sending data for {seconds} seconds. The connection or provider may have stalled. Retry resends your message and attachments; it does not resume the interrupted output. Timeouts and automatic retries are configurable in Settings > General.",
+    "chat.modelStreamInterrupted": "The model response stream closed unexpectedly before finishing. The connection or provider may have dropped. Retry resends your message and attachments; it does not resume the interrupted output.",
     "chat.providerError": "Error: {reason}",
     "chat.browserWaiting": "Waiting for browser input",
     "chat.runningCommand": "Running command...",
