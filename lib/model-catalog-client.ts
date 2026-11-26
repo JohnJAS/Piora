@@ -21,14 +21,46 @@ export interface ModelCatalogResponse {
 interface FetchModelCatalogOptions {
   cwd?: string;
   forceRefresh?: boolean;
+  settingsRevision?: number;
   signal?: AbortSignal;
   fetcher?: typeof fetch;
   retryDelaysMs?: readonly number[];
   requestTimeoutMs?: number;
+  useCache?: boolean;
 }
 
 const STARTUP_RETRY_DELAYS_MS = [0, 400, 1_200] as const;
 const MODEL_REQUEST_TIMEOUT_MS = 15_000;
+const MODEL_CATALOG_CACHE_TTL_MS = 30_000;
+
+const catalogCache = new Map<string, { data: ModelCatalogResponse; expiresAt: number }>();
+const inflightCatalog = new Map<string, Promise<ModelCatalogResponse>>();
+const seenSettingsRevisions = new Map<string, number>();
+
+export function clearModelCatalogCache(): void {
+  catalogCache.clear();
+  inflightCatalog.clear();
+  seenSettingsRevisions.clear();
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortReason(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
 
 class ModelCatalogHttpError extends Error {
   constructor(
@@ -101,45 +133,80 @@ function createAttemptSignal(parent: AbortSignal | undefined, timeoutMs: number)
  * forced server refresh. Usable partial results are returned immediately.
  */
 export async function fetchModelCatalog(options: FetchModelCatalogOptions = {}): Promise<ModelCatalogResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const delays = options.retryDelaysMs ?? STARTUP_RETRY_DELAYS_MS;
-  const requestTimeoutMs = options.requestTimeoutMs ?? MODEL_REQUEST_TIMEOUT_MS;
-  let lastError: Error | undefined;
-  let lastData: ModelCatalogResponse | undefined;
-
-  for (let attempt = 0; attempt < delays.length; attempt += 1) {
-    await waitForRetry(delays[attempt] ?? 0, options.signal);
-    if (options.signal?.aborted) throw abortReason(options.signal);
-
-    const attemptSignal = createAttemptSignal(options.signal, requestTimeoutMs);
-    try {
-      const response = await fetcher(
-        modelCatalogUrl(options.cwd, options.forceRefresh === true || attempt > 0),
-        { cache: "no-store", signal: attemptSignal.signal },
-      );
-      const data = await response.json() as ModelCatalogResponse;
-      if (!response.ok) {
-        const error = new ModelCatalogHttpError(data.error || `HTTP ${response.status}`, response.status);
-        if (response.status < 500 || attempt === delays.length - 1) throw error;
-        lastError = error;
-        continue;
-      }
-
-      lastData = data;
-      const hasUsableModels = (data.modelList?.length ?? 0) > 0;
-      if (hasUsableModels || attempt === delays.length - 1) return data;
-    } catch (error) {
-      if (options.signal?.aborted) throw abortReason(options.signal);
-      if (error instanceof ModelCatalogHttpError && error.status < 500) throw error;
-      lastError = attemptSignal.timedOut()
-        ? new Error("Model catalog request timed out")
-        : error instanceof Error ? error : new Error(String(error));
-      if (attempt === delays.length - 1) break;
-    } finally {
-      attemptSignal.cleanup();
+  if (options.signal?.aborted) throw abortReason(options.signal);
+  const useCache = options.useCache ?? options.fetcher === undefined;
+  const cacheKey = options.cwd ?? "";
+  const settingsRevision = options.settingsRevision ?? 0;
+  const settingsChanged = useCache && settingsRevision > (seenSettingsRevisions.get(cacheKey) ?? 0);
+  const forceRefresh = options.forceRefresh === true || settingsChanged;
+  if (settingsChanged) seenSettingsRevisions.set(cacheKey, settingsRevision);
+  if (useCache) {
+    if (forceRefresh) catalogCache.delete(cacheKey);
+    else {
+      const cached = catalogCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) return cached.data;
+      const pending = inflightCatalog.get(cacheKey);
+      if (pending) return await raceWithAbort(pending, options.signal);
     }
   }
 
-  if (lastData) return lastData;
-  throw lastError ?? new Error("Unable to load the model catalog");
+  const fetcher = options.fetcher ?? fetch;
+  const delays = options.retryDelaysMs ?? STARTUP_RETRY_DELAYS_MS;
+  const requestTimeoutMs = options.requestTimeoutMs ?? MODEL_REQUEST_TIMEOUT_MS;
+
+  const load = async (signal?: AbortSignal): Promise<ModelCatalogResponse> => {
+    let lastError: Error | undefined;
+    let lastData: ModelCatalogResponse | undefined;
+
+    for (let attempt = 0; attempt < delays.length; attempt += 1) {
+      await waitForRetry(delays[attempt] ?? 0, signal);
+      if (signal?.aborted) throw abortReason(signal);
+
+      const attemptSignal = createAttemptSignal(signal, requestTimeoutMs);
+      try {
+        const response = await fetcher(
+          modelCatalogUrl(options.cwd, forceRefresh || attempt > 0),
+          { cache: "no-store", signal: attemptSignal.signal },
+        );
+        const data = await response.json() as ModelCatalogResponse;
+        if (!response.ok) {
+          const error = new ModelCatalogHttpError(data.error || `HTTP ${response.status}`, response.status);
+          if (response.status < 500 || attempt === delays.length - 1) throw error;
+          lastError = error;
+          continue;
+        }
+
+        lastData = data;
+        const hasUsableModels = (data.modelList?.length ?? 0) > 0;
+        if (hasUsableModels || attempt === delays.length - 1) return data;
+      } catch (error) {
+        if (signal?.aborted) throw abortReason(signal);
+        if (error instanceof ModelCatalogHttpError && error.status < 500) throw error;
+        lastError = attemptSignal.timedOut()
+          ? new Error("Model catalog request timed out")
+          : error instanceof Error ? error : new Error(String(error));
+        if (attempt === delays.length - 1) break;
+      } finally {
+        attemptSignal.cleanup();
+      }
+    }
+
+    if (lastData) return lastData;
+    throw lastError ?? new Error("Unable to load the model catalog");
+  };
+
+  if (!useCache) return await load(options.signal);
+
+  // A forced read replaces the in-flight entry so future callers see the new
+  // result even when the previous request finishes after it.
+  const sharedPromise = load().then(data => {
+    if (inflightCatalog.get(cacheKey) === sharedPromise && (data.modelList?.length ?? 0) > 0 && !data.modelError) {
+      catalogCache.set(cacheKey, { data, expiresAt: Date.now() + MODEL_CATALOG_CACHE_TTL_MS });
+    }
+    return data;
+  }).finally(() => {
+    if (inflightCatalog.get(cacheKey) === sharedPromise) inflightCatalog.delete(cacheKey);
+  });
+  inflightCatalog.set(cacheKey, sharedPromise);
+  return await raceWithAbort(sharedPromise, options.signal);
 }

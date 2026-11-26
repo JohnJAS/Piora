@@ -41,8 +41,10 @@ const MeasuredRow = memo(function MeasuredRow({ rowKey, measure, children }: { r
     observer.observe(element, { box: "border-box" });
     return () => observer.disconnect();
   }, [rowKey, measure]);
-  return <div ref={ref} data-virtual-key={rowKey} style={{ display: "flow-root", overflowAnchor: "none" }}>{children}</div>;
+  return <div ref={ref} data-virtual-key={rowKey} style={{ display: "flow-root", overflowAnchor: "none", contain: "style" }}>{children}</div>;
 });
+
+const INITIAL_WINDOW_ROWS = 10;
 
 /** Variable-height windowing with retained measurements and a stable scroll anchor. */
 export function VirtualList({ keys, renderItem, estimate, scrollContainer, handleRef, initialTail = false, pinnedKeys = [] }: Props) {
@@ -58,7 +60,10 @@ export function VirtualList({ keys, renderItem, estimate, scrollContainer, handl
   }, [keys, estimate, measurementVersion]);
   const current = useRef({ keys, offsets });
   current.current = { keys, offsets };
-  const [range, setRange] = useState(() => ({ start: initialTail ? Math.max(0, keys.length - 30) : 0, end: initialTail ? keys.length : Math.min(30, keys.length) }));
+  const [range, setRange] = useState(() => ({
+    start: initialTail ? Math.max(0, keys.length - INITIAL_WINDOW_ROWS) : 0,
+    end: initialTail ? keys.length : Math.min(INITIAL_WINDOW_ROWS, keys.length),
+  }));
   const anchor = useRef<{ key: string; inset: number } | null>(null);
   const navigation = useRef<{ key: string } | null>(null);
   const [navigationKey, setNavigationKey] = useState<string | null>(null);

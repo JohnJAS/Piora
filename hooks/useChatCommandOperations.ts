@@ -31,6 +31,7 @@ interface Options {
   onAccepted(): void;
   onFinished(record: ChatCommandView): void;
   sharedCommandStream?: SharedCommandStreamChannel;
+  deferStandaloneStream?: boolean;
 }
 
 export function useChatCommandOperations(options: Options) {
@@ -153,6 +154,8 @@ export function useChatCommandOperations(options: Options) {
     if (!sessionId) return;
     const sid = sessionId;
     const sharedStream = options.sharedCommandStream;
+    const deferStandalone = Boolean(options.deferStandaloneStream);
+    if (!usingSharedStream && deferStandalone) return;
     let disposed = false;
     let sseHealthy = false;
     const recover = () => { void refresh().catch(() => { if (!disposed) setConnectionError(t("chatCommands.connectionRecovering")); }); };
@@ -249,7 +252,7 @@ export function useChatCommandOperations(options: Options) {
     window.addEventListener("online", reconcileOnWake);
     document.addEventListener("visibilitychange", reconcileOnWake);
     return () => { disposed = true; unsubscribeStream(); clearInterval(timer); window.removeEventListener("online", reconcileOnWake); document.removeEventListener("visibilitychange", reconcileOnWake); };
-  }, [sessionId, refresh, t, usingSharedStream, options.sharedCommandStream]);
+  }, [sessionId, refresh, t, usingSharedStream, options.sharedCommandStream, options.deferStandaloneStream]);
 
   const submit = useCallback(async (message: string, images: AttachedImage[] = [], files: AttachedFile[] = [], onDurable?: (id?: string) => void, inputOptions: ChatInputOptions = {}, retryOfPromptIds?: string[]) => {
     const initial = latest.current;

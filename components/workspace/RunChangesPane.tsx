@@ -52,14 +52,23 @@ export const RunChangesPane = memo(function RunChangesPane({
       }
     };
     const controller = new AbortController();
-    const polling = sessionRunning ? pollVisibleDocument(load, 2500) : null;
-    if (!polling) void load(controller.signal);
+    let polling: ReturnType<typeof pollVisibleDocument> | null = null;
+    let deferTimer: ReturnType<typeof setTimeout> | undefined;
+    const start = () => {
+      if (cancelled) return;
+      const pollMs = fileNavMode === "run" ? 2500 : 5000;
+      polling = sessionRunning ? pollVisibleDocument(load, pollMs) : null;
+      if (!polling) void load(controller.signal);
+    };
+    if (fileNavMode === "run") start();
+    else deferTimer = setTimeout(start, 200);
     return () => {
       cancelled = true;
+      if (deferTimer !== undefined) clearTimeout(deferTimer);
       controller.abort();
       polling?.stop();
     };
-  }, [active, sessionId, sessionRunning, refreshKey]);
+  }, [active, sessionId, sessionRunning, refreshKey, fileNavMode]);
 
   return <>
     <div className={styles.fileNavigatorTabs} role="tablist" aria-label={t("files.navigator")}>

@@ -19,6 +19,7 @@ export function useWorkflow(
   running: boolean,
   executeAction: (action: WorkflowAction) => Promise<WorkflowSnapshot>,
   liveSnapshot?: WorkflowSnapshot | null,
+  deferInitialLoad = false,
 ) {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot | null>(null);
@@ -78,14 +79,15 @@ export function useWorkflow(
     lastFetchedRef.current = null;
     actionInFlight.current = false;
     setSnapshot(null); setLoadError(null); setActionError(null); setBusy(false);
-    if (sessionId) void reconcile();
+    if (sessionId && !deferInitialLoad) void reconcile();
     return () => { generation.current = epoch + 1; request.current?.abort(); request.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, reconcile]);
 
   const hasActiveWorkflow = Boolean(snapshot?.sessionId === sessionId && (snapshot.mode !== "agent" || snapshot.current));
 
   useEffect(() => {
-    if (!sessionId || !visible) return;
+    if (!sessionId || !visible || deferInitialLoad) return;
     const isStale = () => !lastFetchedRef.current || lastFetchedRef.current.sid !== sessionId || Date.now() - lastFetchedRef.current.at >= 5_000;
     const refreshVisible = () => {
       if (document.visibilityState !== "hidden" && !request.current && isStale()) void reconcile();
@@ -102,7 +104,7 @@ export function useWorkflow(
       window.removeEventListener("online", refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
     };
-  }, [sessionId, visible, running, hasActiveWorkflow, reconcile]);
+  }, [sessionId, visible, running, hasActiveWorkflow, deferInitialLoad, reconcile]);
 
   const act = useCallback(async (
     action: WorkflowAction["action"],

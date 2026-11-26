@@ -5,7 +5,7 @@ import type { BrowserUserWaitSnapshot, BrowserUserWaitStatus } from "@/lib/brows
 import { browserWaitPurpose, type BrowserWaitPurpose } from "@/lib/browser-wait-policy";
 
 type Snapshot = { wait: BrowserUserWaitSnapshot | null; outcome?: { toolCallId: string; status: BrowserUserWaitStatus; endedAt: number; purpose?: BrowserWaitPurpose } | null };
-export function BrowserHandoffNotice({ sessionId, busy, onWaitingChange }: { sessionId?: string; busy: boolean; onWaitingChange?: (waiting: boolean) => void }) {
+export function BrowserHandoffNotice({ sessionId, busy, deferInitialFetch = false, onWaitingChange }: { sessionId?: string; busy: boolean; deferInitialFetch?: boolean; onWaitingChange?: (waiting: boolean) => void }) {
   const { locale } = useI18n();
   const zh = locale === "zh-CN";
   const [snapshot, setSnapshot] = useState<{ id: string; data: Snapshot; receivedAt: number } | null>(null);
@@ -13,7 +13,7 @@ export function BrowserHandoffNotice({ sessionId, busy, onWaitingChange }: { ses
   const [continueError, setContinueError] = useState<{ toolCallId: string; message: string } | null>(null);
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || deferInitialFetch) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let waitingVisibility = false;
@@ -54,7 +54,7 @@ export function BrowserHandoffNotice({ sessionId, busy, onWaitingChange }: { ses
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [sessionId, busy]);
+  }, [sessionId, busy, deferInitialFetch]);
   const isWaiting = snapshot?.id === sessionId && snapshot?.data.wait?.backend === "desktop";
   const wait = snapshot && snapshot.id === sessionId ? snapshot.data.wait : null;
   const login = Boolean(wait && browserWaitPurpose(wait.reason, wait.purpose) === "login");

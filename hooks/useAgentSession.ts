@@ -558,6 +558,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const [toolReviews, setToolReviews] = useState<ToolReviewRecord[]>([]);
+  const toolReviewsSessionRef = useRef<string | null>(session?.id ?? null);
   const acceptToolReviews = useCallback((incoming: ToolReviewRecord[]) => {
     setToolReviews(current => {
       const records = new Map(current.map(record => [record.id, record]));
@@ -566,23 +567,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, []);
   useEffect(() => {
-    setToolReviews([]);
-    if (!session?.id) return;
+    const sid = session?.id ?? null;
+    if (toolReviewsSessionRef.current !== sid) {
+      toolReviewsSessionRef.current = sid;
+      setToolReviews([]);
+    }
+    if (!sid || sessionHydrating) return;
     const controller = new AbortController();
     const refresh = () => {
-      void fetch(`/api/sessions/${encodeURIComponent(session.id)}/tool-reviews`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(data => {
+      void fetch(`/api/sessions/${encodeURIComponent(sid)}/tool-reviews`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(data => {
         if (!controller.signal.aborted && Array.isArray(data?.reviews)) acceptToolReviews(data.reviews);
       }).catch(() => undefined);
     };
     refresh();
     const refreshVisible = () => { if (document.visibilityState !== "hidden") refresh(); };
-    const timer = window.setInterval(refreshVisible, 5000);
+    const timer = agentRunning || bashRunning ? window.setInterval(refreshVisible, 5000) : null;
     document.addEventListener("visibilitychange", refreshVisible);
-    return () => { controller.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [session?.id, acceptToolReviews]);
+    return () => { controller.abort(); if (timer !== null) window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
+  }, [session?.id, sessionHydrating, agentRunning, bashRunning, acceptToolReviews]);
   const [toolPermission, setToolPermission] = useState<ToolPermissionState | null>(() => opts.newSessionInitialPermissionMode
     ? { mode: opts.newSessionInitialPermissionMode, revision: 0 } : null);
+  const permissionHydratedSessionRef = useRef<string | null>(null);
   const acceptToolPermission = useCallback((next: ToolPermissionState) => {
+    if (sessionIdRef.current) permissionHydratedSessionRef.current = sessionIdRef.current;
     setToolPermission(current => !current || next.revision >= current.revision ? next : current);
   }, []);
   const [permissionSaving, setPermissionSaving] = useState(false);
@@ -594,9 +601,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let disposed = false;
     if (session?.id && permissionOwnerRef.current !== session.id) {
       permissionOwnerRef.current = session.id;
+      permissionHydratedSessionRef.current = null;
       permissionOverrideRef.current = undefined;
       setToolPermission(null);
     }
+    if (session?.id && sessionHydrating) return;
     const refresh = async () => {
       const sid = session?.id ?? sessionIdRef.current;
       const generation = ++permissionReadGeneration.current;
@@ -610,11 +619,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       } catch { /* Keep the control disabled until authoritative state is available. */ }
     };
-    void refresh();
+    if (!session?.id || permissionHydratedSessionRef.current !== session.id) {
+      void refresh();
+    }
     window.addEventListener("focus", refresh);
     window.addEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh);
     return () => { disposed = true; window.removeEventListener("focus", refresh); window.removeEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh); };
-  }, [session?.id, newSessionCwd, acceptToolPermission]);
+  }, [session?.id, sessionHydrating, newSessionCwd, acceptToolPermission]);
 
   const agentRunningRef = useRef(initiallyRunning);
   const [backgroundSubagents, setBackgroundSubagents] = useState(false);
@@ -1997,6 +2008,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     },
     connectModelEvents: ensureEventsConnected,
     sharedCommandStream,
+    deferStandaloneStream: sessionHydrating,
     resumeQueuedInput,
     uploadFiles: uploadPromptMaterialFiles,
     onAccepted: () => { if (isNew) promoteNewSession(); },
@@ -2646,6 +2658,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
     const d = await fetchModelCatalog({
       forceRefresh,
+      settingsRevision: modelsRefreshKey,
       ...(modelCwd ? { cwd: modelCwd } : {}),
       ...(signal ? { signal } : {}),
     });
@@ -2674,7 +2687,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setThinkingLevel((pinned as ThinkingLevelOption | undefined) ?? "auto");
       }
     }
-  }, [isNew, newSessionCwd, session?.cwd]);
+  }, [isNew, modelsRefreshKey, newSessionCwd, session?.cwd]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
@@ -3215,12 +3228,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Load model list
   useEffect(() => {
     const controller = new AbortController();
-    loadModels(controller.signal, (modelsRefreshKey ?? 0) > 0).catch((e) => {
+    loadModels(controller.signal).catch((e) => {
       if (controller.signal.aborted) return;
       setModelError(e instanceof Error ? e.message : String(e));
     });
     return () => controller.abort();
-  }, [loadModels, modelsRefreshKey]);
+  }, [loadModels]);
 
   // A file edited outside Settings produces no refresh notification. Recheck
   // errors until the config recovers, without touching the running session.
