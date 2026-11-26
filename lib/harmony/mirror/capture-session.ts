@@ -10,12 +10,12 @@ import { HarmonyError } from "../errors";
 import { HosVideoPacketizer } from "../media/hos-packets";
 import { readBundledVideoLibraryCandidates, type BundledVideoLibrary } from "../runtime/bundled-video-library";
 import { videoStartupDiagnostics } from "../runtime/video-startup-diagnostics";
-import { VideoOwnership } from "../runtime/video-ownership";
+import { parseVideoDaemonProcesses, VIDEO_SOCKET, VideoOwnership, type VideoDaemonProcess } from "../runtime/video-ownership";
 import type { HarmonyVideoConnection } from "../types";
 import { MirrorSubscriber } from "./subscriber";
 import { MIRROR_PROFILE, captureArguments } from "./profile";
 
-const SOCKET = "localabstract:scrcpy_grpc_socket";
+const SOCKET = VIDEO_SOCKET;
 const MAX_QUEUE = 8 * 1024 * 1024;
 type Run = (args: readonly string[], operation: string, signal?: AbortSignal, timeout?: number) => Promise<CommandResult>;
 type Reply = { getPayloadMap(): { get(key: string): { getValBytes_asU8(): Uint8Array } | undefined } };
@@ -36,6 +36,7 @@ export class MirrorCaptureSession {
   private forwarded = false;
   private forwardPending = false;
   private libraryDispatched = false;
+  private daemonDispatched = false;
   private failed?: Error;
   private lastKeyframeRequest = -Infinity;
   private keyframePending = false;
@@ -68,14 +69,17 @@ export class MirrorCaptureSession {
     return result.stdout.toString("utf8").replace(/\0/g, "");
   }
 
-  private async ownsProcess(): Promise<boolean> {
+  private async findOwnedProcesses(): Promise<VideoDaemonProcess[]> {
     const processes = await this.shell("ps -ef", "debug_video_owner");
-    const matches = processes.split(/\r?\n/).filter(line => {
-      const fields = line.trim().split(/\s+/);
-      return /^\d+$/.test(fields[1]) && fields.includes(this.name) && fields.includes("--extension-name") && fields.includes("uitest");
-    });
+    return parseVideoDaemonProcesses(processes, this.name);
+  }
+
+  private async ownsProcess(): Promise<boolean> {
+    const all = await this.findOwnedProcesses();
+    const daemons = all.filter(proc => !proc.isShellWrapper);
+    const matches = daemons.length > 0 ? daemons : all;
     if (matches.length !== 1) return false;
-    const pid = Number(matches[0].trim().split(/\s+/)[1]);
+    const pid = matches[0].pid;
     if (this.pid && this.pid !== pid) return false;
     this.pid = pid;
     return true;
@@ -84,7 +88,10 @@ export class MirrorCaptureSession {
   private async initialize(knownVersion?: string, scale = MIRROR_PROFILE.scale) {
     const sockets = await this.shell("cat /proc/net/unix", "debug_video_socket_check");
     if (sockets.includes("@scrcpy_grpc_socket")) {
-      throw new HarmonyError("DEVICE_BUSY", "Another tool owns the native video channel", { details: { reason: "debug-video-busy" } });
+      const reclaimed = await this.ownership?.reclaimOrphanedDaemons();
+      if (!reclaimed) {
+        throw new HarmonyError("DEVICE_BUSY", "Another tool owns the native video channel", { details: { reason: "debug-video-busy" } });
+      }
     }
     const version = knownVersion || await this.shell("uitest --version", "debug_video_version");
     const candidates = await readBundledVideoLibraryCandidates(version).catch(() => {
@@ -111,7 +118,7 @@ export class MirrorCaptureSession {
         });
         // Loader failures normally leave no daemon. Never replace a live own
         // library, steal a foreign socket, or retry unrelated startup errors.
-        if (await this.ownsProcess()) throw error;
+        if ((await this.findOwnedProcesses()).length > 0) throw error;
         if ((await this.shell("cat /proc/net/unix", "debug_video_fallback_socket")).includes("@scrcpy_grpc_socket")) {
           throw new HarmonyError("DEVICE_BUSY", "Another tool owns the debug video channel", { details: { reason: "debug-video-busy" } });
         }
@@ -128,6 +135,7 @@ export class MirrorCaptureSession {
       await this.run(["-t", this.serial, "file", "send", path, `/data/local/tmp/${this.name}`], "debug_video_upload", undefined, 8000);
     } finally { await rm(directory, { recursive: true, force: true }); }
     // The shipped native library exposes the UiTest capture service.
+    this.daemonDispatched = true;
     const pid = await this.shell(`uitest start-daemon singleness --extension-name ${this.name} ${captureArguments(scale)} > /data/local/tmp/${this.name}.log 2>&1 & echo $!`, "debug_video_start");
     const match = /^\s*(\d+)\s*$/.exec(pid);
     if (!match) throw await this.startupFailure(library, version);
@@ -268,7 +276,21 @@ export class MirrorCaptureSession {
       this.source?.cancel(); this.rpc?.close();
       // Never terminate another IDE's global uitest service or remove its forwarding rules.
       const stopped = async () => {
-        if (await this.ownsProcess()) await this.shell(`kill -9 ${this.pid}`, "debug_video_stop");
+        const matched = await this.findOwnedProcesses();
+        const ordered = [...matched].sort((left, right) => Number(left.isShellWrapper) - Number(right.isShellWrapper));
+        for (const proc of ordered) {
+          await this.shell(`kill -9 ${proc.pid}`, "debug_video_stop");
+        }
+        if (ordered.length > 0 || this.daemonDispatched) {
+          let sockets = await this.shell("cat /proc/net/unix", "debug_video_stop_socket");
+          for (let attempt = 0; ordered.length > 0 && sockets.includes("@scrcpy_grpc_socket") && attempt < 15; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            sockets = await this.shell("cat /proc/net/unix", "debug_video_stop_socket");
+          }
+          if (sockets.includes("@scrcpy_grpc_socket") && (await this.findOwnedProcesses()).length > 0) {
+            throw new Error("The native debug video daemon did not exit during cleanup");
+          }
+        }
         await this.shell(`rm -f /data/local/tmp/${this.name} /data/local/tmp/${this.name}.log`, "debug_video_file_cleanup");
       };
       const cleanup = await Promise.allSettled([
