@@ -52,7 +52,6 @@ function BrowserPreferences() {
     <>
       <div className={styles.contentHeading}>
         <h2>{t("browserPreferences.title")}</h2>
-        <p>{t("browserPreferences.description")}</p>
       </div>
       <section data-settings-id="browser.downloads" className={`${styles.promptCard} ${styles.browserPreferencesCard}`} aria-labelledby="browser-download-label">
         <form onSubmit={event => { event.preventDefault(); void save(); }}>

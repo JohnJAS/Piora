@@ -35,10 +35,9 @@ export function DesktopUpdateScheduleSetting() {
     <div className={updateStyles.field}>
       <div className={updateStyles.copy}>
         <div className={styles.rowTitle}>{t("settings.updateSchedule")}</div>
-        <p id="desktop-update-schedule-description" className={updateStyles.description}>{t("settings.updateScheduleDescription")}</p>
       </div>
       <button type="button" className={styles.switch} role="switch" aria-label={t("settings.updateSchedule")} aria-checked={state?.enabled ?? false}
-        aria-describedby={`desktop-update-schedule-description${state && !state.supported ? " desktop-update-schedule-unavailable" : ""}`}
+        aria-describedby={state && !state.supported ? "desktop-update-schedule-unavailable" : undefined}
         disabled={!state?.supported || saving} onClick={() => void save(!state?.enabled, state?.time)}><span /></button>
     </div>
     {state && !state.supported && <p id="desktop-update-schedule-unavailable" role="note" className={updateStyles.note}>{t(state.unsupportedReason === "non-stable" ? "settings.updateNonStableUnsupported" : "settings.updateScheduleUnsupported")}</p>}

@@ -199,7 +199,11 @@ function worktreePathsEqual(left: string, right: string): boolean {
     : resolvedLeft === resolvedRight;
 }
 
-export async function addWorktree(cwd: string, branch: string): Promise<{ path: string; branch: string }> {
+export async function addWorktree(
+  cwd: string,
+  branch: string,
+  source?: { branch: string | null },
+): Promise<{ path: string; branch: string; projectRoot: string }> {
   const trimmed = branch.trim();
   if (!trimmed) throw new Error("Branch name is required");
 
@@ -210,6 +214,11 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
   const baseDir = `${resolve(repoRoot)}-worktrees`;
   const worktreePath = join(baseDir, dirName);
   if (existsSync(worktreePath)) {
+    if (source && (await listWorktrees(repoRoot)).some((tree) =>
+      tree.branch === trimmed && worktreePathsEqual(tree.path, worktreePath))) {
+      allowFileRoot(worktreePath);
+      return { path: worktreePath, branch: trimmed, projectRoot: repoRoot };
+    }
     throw new Error(`Directory already exists: ${worktreePath}`);
   }
   mkdirSync(baseDir, { recursive: true });
@@ -224,7 +233,13 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
   }
 
   try {
-    if (branchExists) {
+    if (source) {
+      if (branchExists) throw new Error(`Branch already exists: ${trimmed}`);
+      const ref = source.branch === null ? "HEAD" : `refs/heads/${source.branch}`;
+      if (source.branch !== null) await git(cwd, ["check-ref-format", ref]);
+      const start = await git(cwd, ["rev-parse", "--verify", `${ref}^{commit}`]);
+      await git(repoRoot, ["-c", "core.longpaths=true", "worktree", "add", "--quiet", "-b", trimmed, "--", worktreePath, start], GIT_WORKTREE_TIMEOUT_MS);
+    } else if (branchExists) {
       await git(repoRoot, ["-c", "core.longpaths=true", "worktree", "add", "--quiet", "--", worktreePath, trimmed], GIT_WORKTREE_TIMEOUT_MS);
     } else {
       await git(repoRoot, ["-c", "core.longpaths=true", "worktree", "add", "--quiet", "-b", trimmed, "--", worktreePath], GIT_WORKTREE_TIMEOUT_MS);
@@ -236,7 +251,7 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
 
   allowFileRoot(worktreePath);
   invalidateProjectCache();
-  return { path: worktreePath, branch: trimmed };
+  return { path: worktreePath, branch: trimmed, projectRoot: repoRoot };
 }
 
 export async function removeWorktree(cwd: string, worktreePath: string, force = false): Promise<void> {

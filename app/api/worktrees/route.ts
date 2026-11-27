@@ -48,10 +48,11 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
+// An explicit startBranch creates a new branch from that local branch, or from
+// this checkout's HEAD when null.
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; branch?: string };
+    const body = await req.json() as { cwd?: string; branch?: string; startBranch?: unknown };
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
@@ -64,7 +65,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
-    const result = await addWorktree(body.cwd, body.branch);
+    const start = body.startBranch;
+    if (start !== undefined && start !== null && (typeof start !== "string" || !start.trim())) {
+      return NextResponse.json({ error: "Invalid starting branch" }, { status: 400 });
+    }
+    const result = await addWorktree(body.cwd, body.branch, start === undefined ? undefined : { branch: start });
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

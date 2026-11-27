@@ -138,10 +138,7 @@ export function ModelRetrySettings({ compact = false }: { compact?: boolean }) {
     return (
       <div style={{ display: "grid", gap: 14 }} aria-labelledby="model-retry-title">
         <div className={primitiveStyles.compactFooter}>
-          <div>
-            <div id="model-retry-title" className={primitiveStyles.rowTitle}>{t("modelRetry.title")}</div>
-            <div className={primitiveStyles.rowDescription}>{t("modelRetry.description")}</div>
-          </div>
+          <div id="model-retry-title" className={primitiveStyles.rowTitle}>{t("modelRetry.title")}</div>
           <SettingsSegmented
             value={activePreset}
             disabled={!draft || busy}

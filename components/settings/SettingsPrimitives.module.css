@@ -2,7 +2,6 @@
 
 .page {
   width: 100%;
-  max-width: 720px;
   display: grid;
   gap: 22px;
 }
@@ -24,13 +23,6 @@
   font-size: calc(var(--text-lg) * 1.24);
   font-weight: 650;
   letter-spacing: -0.02em;
-}
-
-.pageHeaderCopy p {
-  margin: 5px 0 0;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  line-height: 1.5;
 }
 
 .pageHeaderActions {

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { GitWriteError } from "./git-write";
+import { invalidateProjectCache } from "./worktree";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -22,9 +23,14 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 async function repositoryRoot(cwd: string): Promise<string> {
-  const root = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
-  if (!root) throw new GitWriteError("The selected directory is not a Git repository", 400, "not_git_repository");
-  return root;
+  try {
+    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+  } catch (error) {
+    if (error instanceof GitWriteError && /not a git repository/i.test(error.message)) {
+      throw new GitWriteError("The selected directory is not a Git repository", 400, "not_git_repository");
+    }
+    throw error;
+  }
 }
 
 export interface GitBranchesResponse {
@@ -49,6 +55,21 @@ export async function switchGitBranch(cwd: string, branch: string): Promise<GitB
   const root = await repositoryRoot(cwd);
   const available = await getGitBranches(root);
   if (!available.branches.includes(target)) throw new GitWriteError("The requested local branch does not exist", 404, "branch_not_found");
-  if (available.currentBranch !== target) await git(root, ["switch", "--", target]);
+  if (available.currentBranch !== target) {
+    await git(root, ["switch", "--", target]);
+    invalidateProjectCache();
+  }
+  return await getGitBranches(root);
+}
+
+export async function createGitBranch(cwd: string, branch: string): Promise<GitBranchesResponse> {
+  const target = branch.trim();
+  if (!target || target.startsWith("-") || target.includes("\0")) {
+    throw new GitWriteError("Invalid branch name");
+  }
+  const root = await repositoryRoot(cwd);
+  await git(root, ["check-ref-format", `refs/heads/${target}`]);
+  await git(root, ["switch", "--no-track", "-c", target]);
+  invalidateProjectCache();
   return await getGitBranches(root);
 }

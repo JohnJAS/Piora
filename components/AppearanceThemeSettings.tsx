@@ -15,7 +15,6 @@ export function AppearanceThemeSettings() {
     <div data-settings-id="appearance.looks"><AppearanceLooks /></div>
     <section data-settings-id="appearance.theme" aria-labelledby="settings-appearance-theme" className={styles.themeSection}>
       <h3 id="settings-appearance-theme">{t("appearance.theme")}</h3>
-      <p>{t("appearance.themeHint")}</p>
       <div role="radiogroup" aria-label={t("appearance.theme")} className={styles.themeGrid}>
         {themes.filter(({ id }) => id === "light" || id === "dark").map(preset => <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={t} />)}
       </div>

@@ -1,0 +1,329 @@
+.controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.projectTrigger,
+.moreTrigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.projectTrigger {
+  gap: 6px;
+  min-width: 0;
+  max-width: 242px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-hover));
+}
+
+.projectTrigger > svg,
+.row > svg {
+  flex-shrink: 0;
+}
+
+.projectTrigger > span,
+.row > small,
+.optionText > span,
+.optionText > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectTrigger[data-selected="true"] {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 84%, transparent);
+}
+
+.projectTrigger:hover,
+.moreTrigger:hover,
+.projectTrigger[aria-expanded="true"],
+.moreTrigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.moreTrigger {
+  width: 30px;
+  flex: 0 0 30px;
+  padding: 0;
+}
+
+.moreTrigger[data-worktree="true"]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.projectTrigger:disabled,
+.moreTrigger:disabled,
+.row:disabled {
+  opacity: .65;
+  cursor: default;
+}
+
+.backdrop {
+  display: none;
+}
+
+.popover {
+  position: fixed;
+  z-index: 200;
+  left: var(--menu-left);
+  top: var(--menu-top);
+  bottom: var(--menu-bottom);
+  width: var(--menu-width);
+  max-height: var(--menu-height);
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  overflow-y: auto;
+  border: 1px solid var(--selection-border, var(--border));
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--bg) 94%, var(--bg-panel));
+  color: var(--text);
+  box-shadow: var(--selection-shadow, var(--shadow-popover));
+  font-size: var(--text-sm);
+}
+
+.popover[data-expanded="true"] {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.search {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 3px 4px;
+  padding: 0 6px;
+  min-height: 35px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.search input,
+.createForm input {
+  min-width: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.search input {
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  outline: none;
+}
+
+.search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.search input::placeholder {
+  color: var(--text-muted);
+}
+
+.list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.actions {
+  flex-shrink: 0;
+  display: grid;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.row,
+.back {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 33px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row > svg:first-child,
+.back,
+.row > small,
+.optionText > small {
+  color: var(--text-muted);
+}
+
+.row > span:nth-child(2) {
+  min-width: 0;
+}
+
+.row:hover:not(:disabled),
+.row:focus-visible,
+.row[data-active],
+.back:hover {
+  background: var(--bg-hover);
+}
+
+.row[aria-selected="true"] {
+  background: var(--bg-selected);
+}
+
+.optionText {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+}
+
+.optionText > span {
+  flex: 0 1 auto;
+}
+
+.optionText > small {
+  flex: 0 1 42%;
+}
+
+.check,
+.row > small,
+.switch {
+  margin-inline-start: auto;
+}
+.check { color: var(--accent); }
+
+.status,
+.error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.error { color: var(--danger, #dc2626); }
+
+.switch {
+  position: relative;
+  flex: 0 0 28px;
+  height: 16px;
+  border-radius: 12px;
+  background: var(--border);
+}
+
+.switch::before {
+  content: "";
+  position: absolute;
+  inset: 2px auto auto 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
+}
+
+.row[aria-checked="true"] .switch { background: var(--accent); }
+.row[aria-checked="true"] .switch::before { transform: translateX(12px); }
+
+.branchPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  padding-inline-start: 5px;
+  border-inline-start: 1px solid var(--border);
+}
+
+.back {
+  width: fit-content;
+  min-height: 28px;
+  font-size: var(--text-xs);
+}
+
+.back[data-back-to-git="true"] { display: none; }
+
+.createForm {
+  display: grid;
+  gap: 8px;
+  padding: 7px;
+}
+
+.createForm input {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.createButton {
+  justify-self: start;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.createButton:disabled {
+  opacity: .48;
+  cursor: default;
+}
+
+@media (max-width: 620px) {
+  .backdrop {
+    position: fixed;
+    z-index: 199;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgb(15 23 42 / 26%);
+  }
+
+  .popover,
+  .popover[data-expanded="true"] {
+    inset: auto 10px max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    display: flex;
+    max-height: min(380px, calc(100dvh - 20px));
+  }
+
+  .popover[data-expanded="true"] .gitActions { display: none; }
+  .back[data-back-to-git="true"] { display: flex; }
+  .branchPane { border: 0; padding: 0; }
+}

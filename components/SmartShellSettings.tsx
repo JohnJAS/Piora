@@ -23,7 +23,7 @@ const TIMEOUT_PRESETS = [
 
 type TimeoutPresetId = typeof TIMEOUT_PRESETS[number]["id"] | "custom";
 
-export function SmartShellSettings({ cwd }: { cwd?: string }) {
+export function SmartShellSettings() {
   const { t } = useI18n();
   const [timeoutMinutes, setTimeoutMinutes] = useState<string | null>(null);
   const [savedMinutes, setSavedMinutes] = useState<string | null>(null);
@@ -106,16 +106,14 @@ export function SmartShellSettings({ cwd }: { cwd?: string }) {
   const activeTimeoutPreset: TimeoutPresetId = customTimeoutOpen ? "custom" : (matchedPreset?.id ?? "custom");
 
   return (
-    <SettingsPage title={t("shell.title")} description={t("shell.description")}>
+    <SettingsPage title={t("shell.title")}>
       <SettingsSection>
         <SettingsRow
           title={t("shell.defaultShell")}
           description={
             <>
-              {t("shell.nativeProfileHint")}
               {shellSaved ? <div className={primitiveStyles.statusText} role="status">{t("shell.defaultShellSaved")}</div> : null}
               {shellError || profileLoadError ? <div className={primitiveStyles.statusError} role="alert">{shellError || profileLoadError}</div> : null}
-              {cwd ? <div style={{ marginTop: 4, fontFamily: "var(--font-mono)", fontSize: "calc(var(--text-xs) * 0.92)" }}>{cwd}</div> : null}
             </>
           }
           settingsId="shell.defaultShell"

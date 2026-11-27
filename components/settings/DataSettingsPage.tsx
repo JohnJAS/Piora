@@ -106,23 +106,15 @@ export function DataSettingsPage({ open, desktopAvailable }: Props) {
   return (
     <SettingsPage
       title={t("settings.page.data")}
-      description={t("settings.page.dataDescription")}
     >
       {hasDirectoryBridge ? (
         <SettingsSection>
           <SettingsRow
             title={t("settings.agentDataDirectory")}
             badge={agentDataInfo?.configuredBy === "environment" ? t("settings.agentDataDirectoryEnvironment") : undefined}
-            description={
-              <>
-                {t("settings.agentDataDirectoryDescription")}
-                {agentDataInfo ? (
-                  <div style={{ marginTop: 4, fontFamily: "var(--font-mono)", fontSize: "calc(var(--text-xs) * 0.94)", overflowWrap: "anywhere" }}>
-                    {agentDataInfo.currentDirectory}
-                  </div>
-                ) : null}
-              </>
-            }
+            description={agentDataInfo?.currentDirectory
+              ? <code>{agentDataInfo.currentDirectory}</code>
+              : undefined}
           >
             <button type="button" className={primitiveStyles.button} onClick={() => setModalOpen(true)}>
               {t("settings.changeDirectory")}

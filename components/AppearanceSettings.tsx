@@ -29,7 +29,7 @@ export function AppearanceSettings() {
   return (
     <div className={`${styles.appearance} settings-embedded-surface`}>
       <header className={styles.header}>
-        <div><h2>{t("appearance.title")}</h2><p>{t("appearance.description")}</p></div>
+        <h2>{t("appearance.title")}</h2>
         <AppearanceResetButton compact />
       </header>
       <div className={styles.tabs} role="tablist" aria-label={t("appearance.tabs.label")}>
@@ -46,7 +46,7 @@ export function AppearanceSettings() {
         id={`${id}-panel-${tab}`} aria-labelledby={`${id}-tab-${tab}`} hidden={activeTab !== tab}>
         {tab === "theme" && <>
           <section className={styles.languageSection} data-settings-id="language" aria-labelledby={`${id}-language-heading`}>
-            <div><h3 id={`${id}-language-heading`}>{t("common.language")}</h3><p>{t("settings.languageDescription")}</p></div>
+            <h3 id={`${id}-language-heading`}>{t("common.language")}</h3>
             <div className={styles.languageOptions} role="radiogroup" aria-label={t("common.language")}>
               {supportedLocales.map((option) => <button key={option.id} type="button" role="radio" aria-checked={locale === option.id} onClick={() => setLocale(option.id as typeof locale)}>{option.label}{locale === option.id ? <span aria-hidden="true">✓</span> : null}</button>)}
             </div>

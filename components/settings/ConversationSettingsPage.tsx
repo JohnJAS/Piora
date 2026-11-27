@@ -51,19 +51,15 @@ export function ConversationSettingsPage({
   return (
     <SettingsPage
       title={t("settings.conversation")}
-      description={t("settings.conversationDescription")}
     >
       <SettingsSection title={t("settings.section.interaction")}>
         <SettingsRow
           title={t("settings.liveOutputAutoScroll")}
-          description={t("settings.liveOutputAutoScrollDescription")}
           settingsId="conversation.autoScroll"
-          descriptionId="conversation-auto-scroll-desc"
         >
           <SettingsSwitch
             checked={autoScrollEnabled}
             label={t("settings.liveOutputAutoScroll")}
-            describedBy="conversation-auto-scroll-desc"
             onToggle={() => setAutoScrollEnabled(!autoScrollEnabled)}
           />
         </SettingsRow>
@@ -73,7 +69,7 @@ export function ConversationSettingsPage({
           description={
             notificationCapability === "unsupported"
               ? t("taskControls.notificationsUnsupported")
-              : t("taskControls.notificationsDescription")
+              : undefined
           }
           settingsId="conversation.notifications"
           descriptionId="conversation-notifications-desc"
@@ -82,7 +78,7 @@ export function ConversationSettingsPage({
             checked={notificationEnabled}
             disabled={notificationCapability === "unsupported"}
             label={t("taskControls.notifications")}
-            describedBy="conversation-notifications-desc"
+            describedBy={notificationCapability === "unsupported" ? "conversation-notifications-desc" : undefined}
             onToggle={() => void onNotificationToggle()}
           />
         </SettingsRow>

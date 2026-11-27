@@ -79,6 +79,14 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     });
     await page.goto('https://chat-settings.test/');
     await page.getByRole('heading', { name: '指令与提示词', exact: true }).waitFor().catch(async error => { throw new Error(`${error.message}; renderer: ${errors.join('; ')}; visible: ${(await page.locator('body').innerText()).slice(0, 1500)}`); });
+    const assertCentered = async () => {
+      const pane = await page.locator('.settings-content').boundingBox();
+      const content = await page.locator('.settings-embedded-section').boundingBox();
+      assert.ok(Math.abs(pane.x + pane.width / 2 - content.x - content.width / 2) <= 2, 'settings are centered within the detail pane');
+      assert.ok(content.x >= pane.x && content.x + content.width <= pane.x + pane.width, 'settings stay within the detail pane');
+    };
+    await assertCentered();
+    assert.equal(await page.getByRole('heading', { name: '指令与提示词', exact: true }).locator('..').locator('p').count(), 0);
     assert.equal(await page.getByRole('button', { name: '对话与任务', exact: true }).count(), 1);
     assert.equal(await page.getByRole('button', { name: '指令与提示词', exact: true }).count(), 1);
     assert.equal(await page.getByRole('button', { name: /^(运行策略|鸿蒙开发)$/ }).count(), 0);
@@ -105,6 +113,8 @@ test('one chat settings page preserves controls, legacy entries and searchable t
 
     await page.getByRole('button', { name: '对话与任务', exact: true }).click();
     await page.getByRole('heading', { name: '对话与任务', exact: true }).waitFor();
+    await assertCentered();
+    assert.equal(await page.locator('[data-settings-id="conversation.autoScroll"] [id="conversation-auto-scroll-desc"]').count(), 0);
     const toggle = page.getByRole('switch', { name: '权限控制', exact: true });
     await toggle.waitFor();
     assert.equal(await toggle.isChecked(), true);

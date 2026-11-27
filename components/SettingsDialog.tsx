@@ -44,7 +44,6 @@ export type { SettingsKey } from "@/lib/settings-search";
 interface SettingsEntry {
   key: SettingsKey;
   labelKey: string;
-  descriptionKey: string;
   icon: ReactNode;
 }
 
@@ -113,7 +112,6 @@ export function SettingsDialog({
   const detailEntries = useMemo<SettingsEntry[]>(() => SETTINGS_GROUPS.flatMap((group) => group.pages.map((page) => ({
     key: page.key,
     labelKey: page.labelKey,
-    descriptionKey: page.descriptionKey,
     icon: <AliIcon name={page.icon as AliIconName} size={16} />,
   }))), []);
 
@@ -141,6 +139,8 @@ export function SettingsDialog({
   const activeEntry = availableEntries.find((entry) => entry.key === activeKey) ?? availableEntries[0] ?? detailEntries[0]!;
   const searching = searchQuery.trim().length > 0;
   const sectionContent = searching ? undefined : sections[activeKey];
+  const embedded = Boolean(sectionContent) && activeKey !== "shell" && activeKey !== "archived";
+  const widePage = embedded && ["models", "automations", "usage", "companion"].includes(activeKey);
   const selectEntry = (entry: SettingsEntry) => {
     setTargetItem(null);
     setSearchQuery("");
@@ -197,36 +197,37 @@ export function SettingsDialog({
           </nav>
 
           <main className={`${styles.content} settings-content`}>
-            <div className={`${styles.contentBody}${sectionContent ? ` ${styles.contentBodyEmbedded}` : ""}`}>
-            <div className={`${styles.contentCanvas} settings-embedded-section`} data-embedded={Boolean(sectionContent)}>
+            <div className={`${styles.contentBody}${embedded ? ` ${styles.contentBodyEmbedded}` : ""}`}>
+            <div className={`${styles.contentCanvas} settings-embedded-section`} data-embedded={embedded} data-wide={widePage}>
             <div className={styles.tabPanel}>
             {searching ? (
               <>
                 <div className={styles.contentHeading}>
                   <h2>{t("settings.searchTitle")}</h2>
-                  <p>{t("settings.searchDescription", { query: searchQuery.trim() })}</p>
                 </div>
                 {searchItems.length > 0 ? <section className={styles.searchResults} aria-label={t("settings.searchResults")}>
-                  {searchItems.map((entry) => (
-                    <button className={styles.settingRow} type="button" key={entry.id} onClick={() => { setSearchQuery(""); setTargetItem({ id: entry.id }); onActiveKeyChange(entry.section); }}>
-                      <span className={styles.rowIcon}>{availableEntries.find((section) => section.key === entry.section)?.icon}</span>
-                      <span className={styles.rowCopy}>
-                        <span className={styles.rowTitle}>{t(entry.labelKey)}</span>
-                        <span className={styles.rowDescription}>{entry.descriptionKey ? t(entry.descriptionKey) : ""}</span>
-                      </span>
-                      <AliIcon name="chevron-right" size={15} />
-                    </button>
-                  ))}
+                  {searchItems.map((entry) => {
+                    const section = availableEntries.find((candidate) => candidate.key === entry.section);
+                    return (
+                      <button className={styles.settingRow} type="button" key={entry.id} onClick={() => { setSearchQuery(""); setTargetItem({ id: entry.id }); onActiveKeyChange(entry.section); }}>
+                        <span className={styles.rowIcon}>{section?.icon}</span>
+                        <span className={styles.rowCopy}>
+                          <span className={styles.rowTitle}>{t(entry.labelKey)}</span>
+                          {section && entry.labelKey !== section.labelKey && <span className={styles.rowDescription}>{t(section.labelKey)}</span>}
+                        </span>
+                        <AliIcon name="chevron-right" size={15} />
+                      </button>
+                    );
+                  })}
                 </section> : <div className={styles.searchEmpty} role="status">{t("settings.searchEmpty")}</div>}
               </>
             ) : <>
               {activeEntry.key === "browser" ? <BrowserSettings requestedPage={targetItem?.id} /> : activeEntry.key === "general" ? (
-                <SettingsPage title={t("settings.general")} description={t("settings.generalDescription")}>
+                <SettingsPage title={t("settings.general")}>
                   <SettingsSection>
                     {onOpenOnboarding ? (
                       <SettingsRow
                         title={t("settings.firstRunGuideTitle")}
-                        description={t("settings.firstRunGuideDescription")}
                         settingsId="general.onboarding"
                       >
                         <button className={primitiveStyles.buttonPrimary} type="button" onClick={onOpenOnboarding}>
@@ -266,20 +267,9 @@ export function SettingsDialog({
               ) : sectionContent ? (
               sectionContent
               ) : (
-              <>
-                <div className={styles.contentHeading}>
-                  <h2>{t(activeEntry.labelKey)}</h2>
-                  <p>{t(activeEntry.descriptionKey)}</p>
-                </div>
-                <section className={styles.featureCard}>
-                  <div className={styles.featureIcon}>{activeEntry.icon}</div>
-                  <div className={styles.featureCopy}>
-                    <div className={styles.featureTitle}>{t(activeEntry.labelKey)}</div>
-                    <div className={styles.featureDescription}>{t(activeEntry.descriptionKey)}</div>
-                  </div>
-                </section>
-                <div className={styles.detailHint}>{t(`settings.hint.${activeEntry.key}`)}</div>
-              </>
+              <div className={styles.contentHeading}>
+                <h2>{t(activeEntry.labelKey)}</h2>
+              </div>
               )}
             </>}
             </div>
