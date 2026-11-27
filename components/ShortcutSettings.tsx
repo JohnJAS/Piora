@@ -98,7 +98,6 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
           <span className={styles.headingIcon}><AliIcon name="code" size={18} /></span>
           <div>
           <h2>{t("settings.shortcuts")}</h2>
-          <p>{t("settings.shortcutsDescription")}</p>
           </div>
         </div>
         <div className={styles.headingActions}>
@@ -109,7 +108,7 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
         </div>
       </header>
       {onGlobalShortcutToggle ? <section className={styles.globalShortcut} data-settings-id="general.globalShortcut">
-        <div><strong>{t("settings.globalShortcut")}</strong><p>{t("settings.globalShortcutDescription")}</p></div>
+        <strong>{t("settings.globalShortcut")}</strong>
         <button type="button" role="switch" aria-label={t("settings.globalShortcut")} aria-checked={Boolean(globalShortcutEnabled)} onClick={() => void onGlobalShortcutToggle()} className={styles.globalSwitch}><span /></button>
       </section> : null}
       <div className={styles.groups}>

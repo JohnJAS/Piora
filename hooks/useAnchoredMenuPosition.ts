@@ -11,7 +11,12 @@ interface MenuPosition {
 }
 
 /** Viewport coordinates for a body portal, including the mobile keyboard. */
-export function useAnchoredMenuPosition(anchor: RefObject<HTMLElement | null>, open: boolean): MenuPosition | null {
+export function useAnchoredMenuPosition(
+  anchor: RefObject<HTMLElement | null>,
+  open: boolean,
+  preferredWidth?: number,
+  preferredHeight?: number,
+): MenuPosition | null {
   const [position, setPosition] = useState<MenuPosition | null>(null);
   useLayoutEffect(() => {
     if (!open) { setPosition(null); return; }
@@ -26,17 +31,17 @@ export function useAnchoredMenuPosition(anchor: RefObject<HTMLElement | null>, o
       const viewportHeight = viewport?.height ?? window.innerHeight;
       const margin = 8;
       const gap = 8;
-      const width = Math.min(Math.max(rect.width, 320), 680, Math.max(0, viewportWidth - margin * 2));
+      const width = Math.min(preferredWidth ?? Math.max(rect.width, 320), 680, Math.max(0, viewportWidth - margin * 2));
       const left = Math.max(x + margin, Math.min(rect.left, x + viewportWidth - margin - width));
       const aboveEdge = Math.min(y + viewportHeight - margin, Math.max(y + margin, rect.top - gap));
       const belowEdge = Math.max(y + margin, Math.min(y + viewportHeight - margin, rect.bottom + gap));
       const above = Math.max(0, aboveEdge - y - margin);
       const below = Math.max(0, y + viewportHeight - margin - belowEdge);
-      const useAbove = above >= Math.min(320, viewportHeight * 0.5) || above >= below;
+      const useAbove = above >= Math.min(preferredHeight ?? 320, viewportHeight * 0.5) || above >= below;
       const next: MenuPosition = {
         left,
         width,
-        maxHeight: Math.min(400, useAbove ? above : below),
+        maxHeight: Math.min(preferredHeight ?? 400, useAbove ? above : below),
         ...(useAbove ? { bottom: window.innerHeight - aboveEdge } : { top: belowEdge }),
       };
       setPosition((previous) => previous && previous.left === next.left && previous.width === next.width
@@ -56,6 +61,6 @@ export function useAnchoredMenuPosition(anchor: RefObject<HTMLElement | null>, o
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [anchor, open]);
+  }, [anchor, open, preferredWidth, preferredHeight]);
   return open ? position : null;
 }

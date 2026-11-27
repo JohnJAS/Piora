@@ -994,6 +994,10 @@ select:focus-visible,
   margin-inline: auto;
 }
 
+[data-composer-variant="launcher"] > .composer-column {
+  width: 100%;
+}
+
 .chat-column-resize-handle {
   position: absolute;
   z-index: 45;
@@ -1765,6 +1769,15 @@ select:focus-visible,
 .chat-composer-context > * {
   min-width: 0;
   max-width: 100%;
+}
+
+[data-composer-variant="launcher"] .chat-composer-topbar {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+[data-composer-variant="launcher"] .chat-composer-context {
+  padding: 0;
 }
 
 .chat-composer-footer {

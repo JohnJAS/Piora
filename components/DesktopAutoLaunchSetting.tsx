@@ -54,12 +54,12 @@ export function DesktopAutoLaunchSetting() {
         ? t("settings.autoLaunchApprovalRequired")
         : state.error
           ? t("settings.autoLaunchFailed")
-          : t("settings.autoLaunchDescription");
+          : null;
 
   return <div className={styles.conversationRow}>
     <div className={styles.conversationCopy}>
       <div className={styles.rowTitle}>{t("settings.autoLaunch")}</div>
-      <div className={styles.rowDescription} role="status">{description}</div>
+      {description && <div className={styles.rowDescription} role="status">{description}</div>}
     </div>
     <button
       className={styles.switch}

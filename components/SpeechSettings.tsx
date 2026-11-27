@@ -233,11 +233,11 @@ export function SpeechSettings() {
         <div className={styles.toggleRow}>
           <div>
             <h3 data-settings-id="speech.toggle">{t("speech.toggle")}</h3>
-            <p>{t("speech.toggleDescription")}</p>
           </div>
           <button
             type="button"
             role="switch"
+            aria-label={t("speech.toggle")}
             aria-checked={status?.enabled ?? false}
             className={styles.switch}
             data-enabled={status?.enabled || undefined}
@@ -254,7 +254,6 @@ export function SpeechSettings() {
         <div className={styles.cardHeader}>
           <div>
             <h3 data-settings-id="speech.pack">{t("speech.packTitle")}</h3>
-            <p>{t("speech.packDescription")}</p>
           </div>
           <span className={status?.installed ? styles.ready : styles.notInstalled}>
             {status ? status.bundled ? t("speech.bundled") : status.installed ? t("speech.installed") : t("speech.notInstalled") : "—"}
@@ -294,9 +293,7 @@ export function SpeechSettings() {
         <summary className={styles.cardHeader} style={{ cursor: "pointer", listStyle: "none" }}>
           <div>
             <h3>{t("speech.manualTitle")}</h3>
-            <p>{t("speech.manualDescription")}</p>
           </div>
-          <span className={styles.manualBadge}>{t("speech.manualAlwaysAvailable")}</span>
         </summary>
         <div className={styles.downloadList}>
           {manual?.sources.map((source, index) => (
@@ -353,7 +350,6 @@ export function SpeechSettings() {
         <div className={styles.cardHeader}>
           <div>
             <h3>{t("speech.environmentTitle")}</h3>
-            <p>{t("speech.environmentDescription")}</p>
           </div>
         </div>
         <div className={styles.factGrid}>
@@ -369,7 +365,6 @@ export function SpeechSettings() {
         <div className={styles.cardHeader}>
           <div>
             <h3 data-settings-id="speech.location">{t("speech.locationTitle")}</h3>
-            <p>{t("speech.locationDescription")}</p>
           </div>
         </div>
         <div className={styles.pathRow}>

@@ -8,12 +8,10 @@ import styles from "./SettingsPrimitives.module.css";
 
 export function SettingsPage({
   title,
-  description,
   actions,
   children,
 }: {
   title: string;
-  description?: string;
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -22,7 +20,6 @@ export function SettingsPage({
       <header className={styles.pageHeader}>
         <div className={styles.pageHeaderCopy}>
           <h2>{title}</h2>
-          {description ? <p>{description}</p> : null}
         </div>
         {actions ? <div className={styles.pageHeaderActions}>{actions}</div> : null}
       </header>

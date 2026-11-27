@@ -188,12 +188,10 @@ export function PromptsSettingsPage({ open, modelCwd, systemPrompt, onSystemProm
   return (
     <SettingsPage
       title={t("settings.page.prompts")}
-      description={t("settings.page.promptsDescription")}
     >
       <SettingsSection title={t("settings.section.systemAndExtensions")}>
         <SettingsRow
           title={t("system.prompt")}
-          description={t("system.description")}
           badge={systemPrompt?.trim() ? t("settings.customized") : t("settings.usingDefault")}
           settingsId="conversation.systemPrompt"
         >
@@ -208,7 +206,6 @@ export function PromptsSettingsPage({ open, modelCwd, systemPrompt, onSystemProm
       <SettingsSection title={t("settings.section.automationText")}>
         <SettingsRow
           title={t("settings.promptOptimizerTitle")}
-          description={t("settings.promptOptimizerModelDescription")}
           badge={optimizerCustomized ? t("settings.customized") : undefined}
           settingsId="conversation.promptOptimizer"
         >
@@ -231,13 +228,12 @@ export function PromptsSettingsPage({ open, modelCwd, systemPrompt, onSystemProm
 
         <SettingsRow
           title={t("settings.sessionTitlePromptTitle")}
-          description={
+          description={(modelsError || titleModelSaveError) && (
             <>
-              {t("settings.sessionTitleModelDescription")}
               {modelsError ? <div className={primitiveStyles.statusError}>{t("settings.sessionTitleModelsLoadFailed", { error: modelsError })}</div> : null}
-              {titleModelSaveError ? <div className={primitiveStyles.statusError}>{titleModelSaveError}</div> : null}
+              {titleModelSaveError ? <div className={primitiveStyles.statusError} role="alert">{titleModelSaveError}</div> : null}
             </>
-          }
+          )}
           badge={titleCustomized ? t("settings.customized") : undefined}
           settingsId="conversation.titleModel"
         >
@@ -305,7 +301,6 @@ export function PromptsSettingsPage({ open, modelCwd, systemPrompt, onSystemProm
           <span className={primitiveStyles.fieldLabel}>
             {t("settings.promptOptimizerInstructionLabel")} ({Array.from(optimizerPromptDraft).length.toLocaleString()} / {PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH.toLocaleString()})
           </span>
-          <span className={primitiveStyles.fieldHint}>{t("settings.promptOptimizerInstructionDescription")}</span>
           <textarea
             className={primitiveStyles.modalTextarea}
             value={optimizerPromptDraft}
@@ -349,7 +344,6 @@ export function PromptsSettingsPage({ open, modelCwd, systemPrompt, onSystemProm
           <span className={primitiveStyles.fieldLabel}>
             {t("settings.sessionTitleInstructionLabel")} ({Array.from(titlePromptDraft).length.toLocaleString()} / {SESSION_TITLE_PROMPT_MAX_LENGTH.toLocaleString()})
           </span>
-          <span className={primitiveStyles.fieldHint}>{t("settings.sessionTitleInstructionDescription")}</span>
           <textarea
             className={primitiveStyles.modalTextarea}
             value={titlePromptDraft}

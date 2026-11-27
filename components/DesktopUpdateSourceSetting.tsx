@@ -33,7 +33,6 @@ export function DesktopUpdateSourceSetting() {
     <div className={updateStyles.field}>
       <div className={updateStyles.copy}>
         <div className={styles.rowTitle}>{t("settings.updateSource")}</div>
-        <p id="desktop-update-source-description" className={updateStyles.description}>{t("settings.updateSourceDescription")}</p>
       </div>
       <span className={updateStyles.note}>{t("settings.updateSourceGithub")}</span>
     </div>

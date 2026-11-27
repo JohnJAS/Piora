@@ -16,7 +16,7 @@ export function LaboratorySettings({ cwd }: { cwd?: string }) {
   const sideChatDescriptionId = useId();
 
   return (
-    <SettingsPage title={t("laboratory.title")} description={t("laboratory.description")}>
+    <SettingsPage title={t("laboratory.title")}>
       <SettingsSection title={t("settings.section.experimentalFeatures")}>
         <SettingsRow
           title={t("laboratory.planGoal")}

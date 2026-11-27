@@ -24,7 +24,6 @@ export function ChatStorageSettingsPage({ initialTab = "archived", onChanged, on
   return (
     <SettingsPage
       title={t("settings.page.history")}
-      description={t("settings.page.historyDescription")}
       actions={
         <SettingsSegmented
           value={tab}

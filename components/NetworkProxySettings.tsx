@@ -96,7 +96,6 @@ export function NetworkProxySettings() {
   return (
     <SettingsPage
       title={t("networkProxy.title")}
-      description={t("networkProxy.description")}
       actions={
         <button type="button" className={primitiveStyles.button} disabled={loading || busy} onClick={() => void run("test")}>
           {busy ? t("networkProxy.applying") : t("networkProxy.test")}

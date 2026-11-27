@@ -82,11 +82,30 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const retiredRequests = [];
       let laboratoryEnabled = false;
       let approvalEnabled = false;
+      let localBranch = "main";
+      const localBranches = ["main", "feature/project-menu"];
+      const branchUpdates = [];
+      const worktreeRequests = [];
       await context.route("http://localhost:43191/**", async route => {
         const pathname = new URL(route.request().url()).pathname;
         if (pathname === "/api/tool-permissions") { retiredRequests.push(route.request().method()); return route.fulfill({ json: { mode: "full" } }); }
         if (pathname === "/api/settings/tool-approval") return route.fulfill({ json: { enabled: approvalEnabled } });
         if (pathname === "/api/settings/laboratory") return route.fulfill({ json: { planGoalEnabled: laboratoryEnabled } });
+        if (pathname === "/api/git/branches") {
+          if (route.request().method() === "POST") {
+            const update = route.request().postDataJSON();
+            branchUpdates.push(update);
+            if (update.create) localBranches.push(update.branch);
+            localBranch = update.branch;
+          }
+          return route.fulfill({ json: { currentBranch: localBranch, branches: localBranches } });
+        }
+        if (pathname === "/api/worktrees" && route.request().method() === "POST") {
+          const request = route.request().postDataJSON();
+          worktreeRequests.push(request);
+          if (worktreeRequests.length === 1) return route.fulfill({ status: 400, json: { error: "Fixture checkout failed" } });
+          return route.fulfill({ json: { path: "/workspace/new-worktree", projectRoot: request.cwd } });
+        }
         if (pathname === "/api/models") return route.fulfill({ json: { models: {}, modelList: [{ provider: "deepseek", id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash Very Long Model Name" }] } });
         if (pathname === "/api/system-prompt") return route.fulfill({ json: { selectorVisible: true, templates: [{ id: "long", name: "Very long system prompt template name", prompt: "Be helpful" }], defaultTemplateId: "long" } });
         if (pathname === "/api/chat-workspace" || pathname === "/api/cwd/validate") return route.fulfill({ json: { cwd: "/workspace/a-very-long-project-name-for-layout-checks", valid: true } });
@@ -115,7 +134,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.equal(await page.locator('[data-testid="new-session-mark"]').count(), 0);
       assert.equal(await page.getByRole("heading", { name: locale === "zh-CN" ? "接下来想让 Piora 做什么？" : "What should Piora work on next?", exact: true }).count(), 1);
       // Select a real project so its production chip must also truncate.
-      await page.locator('#launcher button[aria-haspopup="listbox"]').first().click();
+      await page.locator('#launcher .chat-composer-topbar button').first().click();
       await page.getByRole("option").filter({ hasText: "a-very-long-project-name" }).click();
       for (const width of [900, 590, 480, 420, 320]) {
         await page.locator("#launcher, #conversation").evaluateAll((sections, width) => sections.forEach(section => { section.style.width = width + "px"; }), width);
@@ -580,7 +599,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           }
           return { count: topbar.querySelectorAll("button").length,
             hasPrompt: Boolean(topbar.querySelector('[class*="SystemPromptSelector"][aria-haspopup="listbox"]')),
-            left: rect.left + 2, rowStarts: [...rowStarts.values()] };
+            left: rect.left, rowStarts: [...rowStarts.values()] };
         });
         assert.equal(await disabledLauncher.getByTestId("workflow-mode-toggle").count(), 0, "disabled laboratory features hide the mode controls");
         assert.equal(disabledContext.count, 1, "the project picker is the only control above the launcher input");
@@ -626,7 +645,14 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const assertProjectLeftAligned = async () => {
         const row = await topbar.boundingBox();
         const project = await projectTrigger.boundingBox();
-        assert.ok(Math.abs(project.x - row.x - 2) < 1, locale + ": the project picker remains left aligned");
+        const surface = await launcher.locator(".chat-composer-surface").boundingBox();
+        const heading = await launcher.getByRole("heading", { level: 1 }).boundingBox();
+        const panel = await launcher.boundingBox();
+        assert.ok(Math.abs(project.x - row.x) < 1 && Math.abs(row.x - surface.x) < 1,
+          locale + ": the project picker is aligned with the composer");
+        const center = box => box.x + box.width / 2;
+        assert.ok(Math.abs(center(heading) - center(surface)) < 1 && Math.abs(center(surface) - center(panel)) < 1,
+          locale + ": the heading and composer share the center of the chat pane");
       };
       const assertFooterWorkflowOrder = async (composer, hasFooterPrompt = false) => {
         const order = await composer.locator(".chat-composer-footer").evaluate(footer => {
@@ -668,17 +694,27 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await launcher.evaluate(section => { section.style.width = "900px"; });
       await settleLayout();
       await projectTrigger.click();
-      const projectPopup = launcher.locator('[class*="projectPopover"]');
+      const projectPopup = page.locator('[data-session-context="projects"]');
       await projectPopup.waitFor();
       const projectBounds = await projectPopup.boundingBox();
       const projectButtonBounds = await projectTrigger.boundingBox();
-      assert.ok(projectBounds.y + projectBounds.height <= projectButtonBounds.y - 8, "desktop project selection still opens above its original trigger");
-      assert.ok(projectBounds.x >= 0 && projectBounds.x + projectBounds.width <= page.viewportSize().width, "left-aligned project selection remains inside the viewport");
+      const viewport = page.viewportSize();
+      const hasSpaceAbove = projectButtonBounds.y - 16 >= 320;
+      const gap = hasSpaceAbove
+        ? projectButtonBounds.y - projectBounds.y - projectBounds.height
+        : projectBounds.y - projectButtonBounds.y - projectButtonBounds.height;
+      assert.ok(Math.abs(gap - 8) <= 1, `desktop menu stays anchored on the side with room: ${JSON.stringify({ projectBounds, projectButtonBounds, viewport })}`);
+      assert.ok(projectBounds.x >= 8 && projectBounds.x + projectBounds.width <= viewport.width - 8
+        && projectBounds.y >= 8 && projectBounds.y + projectBounds.height <= viewport.height - 8,
+      "desktop project selection stays inside the viewport");
+      if (capture) await page.screenshot({ path: path.join(capture, `${locale}-project-menu.png`) });
       const projectSearch = projectPopup.locator("input");
       await page.waitForFunction(element => document.activeElement === element, await projectSearch.elementHandle());
       assert.equal(await projectSearch.evaluate(element => document.activeElement === element), true, "project selection focuses its existing search");
       await projectSearch.fill("a-very-long-project-name");
-      await projectPopup.getByRole("option").filter({ hasText: "a-very-long-project-name" }).click();
+      await projectSearch.press("ArrowDown");
+      assert.ok(await projectSearch.getAttribute("aria-activedescendant"), "arrow keys highlight a matching project");
+      await projectSearch.press("Enter");
       await page.waitForFunction(() => document.activeElement === document.querySelector("#launcher textarea"));
       assert.equal(await launcher.locator("textarea").evaluate(element => document.activeElement === element), true, "choosing a project still returns focus to the input");
       assert.equal(await projectPopup.count(), 0);
@@ -687,7 +723,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           .map(control => { const box = control.getBoundingClientRect(); return { center: box.top + box.height / 2, left: box.left, right: box.right }; });
         return { boxes, width: element.clientWidth, overflow: element.scrollWidth - element.clientWidth };
       });
-      assert.equal(selectedContext.boxes.length, 1, "selecting a long project keeps only its picker on the top row");
+      assert.equal(selectedContext.boxes.length, 2, "a selected project shows only the project picker and more settings");
+      assert.ok(Math.abs(selectedContext.boxes[0].center - selectedContext.boxes[1].center) < 1);
       await assertProjectLeftAligned();
       await assertFooterWorkflowOrder(launcher, true);
       assert.ok(selectedContext.overflow <= 1, "long selected context fits the launcher");
@@ -698,6 +735,37 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         }
         await page.evaluate(() => document.documentElement.classList.remove("dark"));
       }
+      await projectTrigger.click();
+      await projectPopup.getByRole("button", { name: locale === "zh-CN" ? "不关联项目" : "Work without a project" }).click();
+      assert.equal(await topbar.locator("button").count(), 1, "projectless mode removes the Git controls");
+      await projectTrigger.click();
+      await projectPopup.getByRole("option").filter({ hasText: "a-very-long-project-name" }).click();
+      const more = topbar.getByRole("button", { name: locale === "zh-CN" ? "更多项目设置" : "More project settings" });
+      await more.click();
+      const gitPanel = page.locator('[data-session-context="git"]');
+      const branchRow = gitPanel.getByRole("button", { name: /^(分支|Branch)/ });
+      await branchRow.click();
+      const branchesPanel = page.locator('[data-session-context="branches"]');
+      const branchSearch = branchesPanel.getByRole("combobox");
+      await branchSearch.waitFor();
+      if (capture) await page.screenshot({ path: path.join(capture, `${locale}-branch-menu.png`) });
+      await branchSearch.fill("feature/");
+      assert.equal(await branchesPanel.getByRole("option").count(), 1);
+      await branchSearch.press("Enter");
+      await gitPanel.getByText("feature/project-menu", { exact: true }).waitFor();
+      assert.equal(branchUpdates.at(-1).create, false);
+      assert.equal(branchUpdates.at(-1).cwd, "/workspace/a-very-long-project-name-for-layout-checks");
+      await branchRow.click();
+      await branchesPanel.getByRole("button", { name: locale === "zh-CN" ? "创建并检出分支…" : "Create and check out branch…" }).click();
+      const newBranch = page.locator('[data-session-context="create"]');
+      await newBranch.getByRole("textbox").fill("topic/new-chat");
+      await newBranch.getByRole("button", { name: locale === "zh-CN" ? "创建并检出" : "Create and check out" }).click();
+      await gitPanel.getByText("topic/new-chat", { exact: true }).waitFor();
+      assert.equal(branchUpdates.at(-1).create, true);
+      await page.keyboard.press("Escape");
+      await gitPanel.waitFor({ state: "hidden" });
+      assert.equal(await more.evaluate(element => document.activeElement === element), true);
+
       const composerBeforePopup = await launcher.locator(".chat-composer-surface").boundingBox();
       await templateTrigger.click();
       const templatePopup = page.locator('[class*="SystemPromptSelector"][class*="_popup"]').filter({ has: page.getByRole("listbox") });
@@ -726,7 +794,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.equal(await projectPopup.evaluate(element => getComputedStyle(element).position), "fixed", "mobile project selection retains its bottom sheet");
       assert.ok(mobileProject.x >= 9 && mobileProject.x + mobileProject.width <= 381 && mobileProject.y + mobileProject.height <= 791,
         "mobile project sheet stays inside the screen");
-      assert.equal(await launcher.locator('[class*="projectBackdrop"]').isVisible(), true, "mobile project selection keeps its dismissing backdrop");
+      assert.equal(await page.locator("[data-session-context-backdrop]").isVisible(), true, "mobile project selection keeps its dismissing backdrop");
       await page.keyboard.press("Escape");
       await projectPopup.waitFor({ state: "hidden" });
       await page.setViewportSize({ width: 1440, height: 1100 });
@@ -744,6 +812,25 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.deepEqual(approvedLaunch.prompt.commandInput.workflow, { mode: "goal", turnBudget: 10 });
       assert.equal(approvedLaunch.prompt.permissionMode, "full");
       assert.equal(approvedLaunch.cwd, "/workspace/a-very-long-project-name-for-layout-checks");
+
+      await more.click();
+      await gitPanel.getByRole("switch").click();
+      await gitPanel.getByRole("button", { name: /^(起始分支|Base branch)/ }).click();
+      await branchesPanel.getByRole("option", { name: "main", exact: true }).click();
+      assert.equal(branchUpdates.length, 2, "choosing a worktree base leaves the local branch alone");
+      await page.keyboard.press("Escape");
+      await gitPanel.waitFor({ state: "hidden" });
+      const launcherEditor = launcher.locator("textarea");
+      await launcherEditor.fill("Start in the new worktree");
+      await launcher.locator(".composer-submit-controls > button").click();
+      await launcher.getByRole("alert").filter({ hasText: "Fixture checkout failed" }).waitFor();
+      await page.waitForFunction(() => document.querySelector("#launcher textarea").value === "Start in the new worktree");
+      await launcher.locator(".composer-submit-controls > button").click();
+      await page.waitForFunction(() => window.launchRequest?.cwd === "/workspace/new-worktree");
+      assert.equal(worktreeRequests.length, 2);
+      assert.equal(worktreeRequests[0].branch, worktreeRequests[1].branch, "retry reuses the same worktree identity");
+      assert.equal(worktreeRequests[1].startBranch, "main");
+      assert.equal((await page.evaluate(() => window.launchRequest)).projectRoot, approvedLaunch.cwd);
 
       await page.addStyleTag({ content: "#launcher{display:none}#conversation{display:block!important;margin-inline:auto}" });
       await page.evaluate(() => { window.setBusy(false); window.setConversationWorkflowEnabled(true); });

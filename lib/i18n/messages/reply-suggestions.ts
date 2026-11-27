@@ -1,7 +1,7 @@
 export const replySuggestionsZh: Record<string, string> = {
   "reply.savedDetail": "快捷回复设置已保存，将用于后续提取。",
   "reply.error.stale_source": "会话尚未就绪或内容已变化，可稍后重试提取。",
-  "reply.title": "快捷回复", "reply.description": "从助手已经提出的建议和选项中提取快捷回复，点击加入输入框，可组合后一起发送。",
+  "reply.title": "快捷回复", "reply.description": "从助手的回答中提取可选回复。",
   "reply.enable": "自动提取快捷回复", "reply.model": "提取模型", "reply.chooseModel": "请选择独立的提取模型", "reply.searchModels": "搜索模型或提供商", "reply.unavailable": "当前不可用，请检查模型配置和登录状态",
   "reply.prompt": "提取提示词", "reply.promptHelp": "提示词决定提取规则；JSON 输出格式由应用固定管理。",
   "reply.local": "设置保存在此设备的浏览器存储中。每次完成回复会额外调用一次所选模型，可能产生费用。默认关闭，不影响当前聊天模型和提示词优化器。",
@@ -15,7 +15,7 @@ export const replySuggestionsZh: Record<string, string> = {
 export const replySuggestionsEn: Record<string, string> = {
   "reply.savedDetail": "Quick reply settings saved. They will be used for subsequent extractions.",
   "reply.error.stale_source": "The conversation is not ready or its content changed. Try extracting again shortly.",
-  "reply.title": "Quick replies", "reply.description": "Extract choices and suggestions already offered by the assistant. Click to add them to your draft and send several together.",
+  "reply.title": "Quick replies", "reply.description": "Suggest replies based on the assistant’s answer.",
   "reply.enable": "Extract quick replies automatically", "reply.model": "Extraction model", "reply.chooseModel": "Choose a dedicated extraction model", "reply.searchModels": "Search models or providers", "reply.unavailable": "Unavailable — check model configuration and sign-in",
   "reply.prompt": "Extraction prompt", "reply.promptHelp": "This prompt controls extraction rules. The app manages the JSON output format.",
   "reply.local": "Saved in this device’s browser storage. Each completed reply makes an extra call to the selected model and may incur a charge. Off by default; independent of the chat model and prompt optimizer.",

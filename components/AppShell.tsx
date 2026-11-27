@@ -2223,7 +2223,7 @@ export function AppShell() {
       modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
         desktopExtensions: <DesktopExtensionsSettings />,
-        shell: <SmartShellSettings cwd={projectCwd ?? activeCwd ?? undefined} />,
+        shell: <SmartShellSettings />,
         tools: (currentProjectPath ?? settingsProjectCwd) ? (
           <ProjectToolsConfig cwd={(currentProjectPath ?? settingsProjectCwd)!} onChanged={setSessionCapabilities} mcpFocus={mcpToolsFocus} onClearMcpFocus={() => setMcpToolsFocus(null)} />
         ) : chooseSettingsProject,

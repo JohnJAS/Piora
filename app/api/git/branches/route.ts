@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
-import { getGitBranches, switchGitBranch } from "@/lib/git-branches";
+import { createGitBranch, getGitBranches, switchGitBranch } from "@/lib/git-branches";
 import { GitWriteError } from "@/lib/git-write";
 import { invalidateGitStatusCache } from "@/lib/git-status-cache";
 
@@ -41,7 +41,9 @@ export async function POST(request: NextRequest) {
     const record = body as Record<string, unknown>;
     const cwd = await validateCwd(record.cwd);
     if (typeof record.branch !== "string") throw new GitWriteError("branch must be a string");
-    return NextResponse.json(await switchGitBranch(cwd, record.branch));
+    return NextResponse.json(record.create === true
+      ? await createGitBranch(cwd, record.branch)
+      : await switchGitBranch(cwd, record.branch));
   } catch (error) { return errorResponse(error); }
   finally { invalidateGitStatusCache(); }
 }

@@ -6,6 +6,7 @@ import { createJiti } from "jiti";
 const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 
 const picker = await readFile(new URL("./NewSessionProjectPicker.tsx", import.meta.url), "utf8");
+const contextMenu = await readFile(new URL("./new-session/NewSessionContextMenu.tsx", import.meta.url), "utf8");
 const launcher = await readFile(new URL("./NewSessionLauncher.tsx", import.meta.url), "utf8");
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
@@ -19,7 +20,7 @@ const sidebarCss = await readFile(new URL("./SessionSidebar.module.css", import.
 test("landing commands keep explicit follow-up and durable identity through the handoff without requiring a model", async () => {
   const callbacks = picker.slice(picker.indexOf("  const handleLandingSend = useCallback"), picker.indexOf("  const modelsUnavailable"));
   const calls = [];
-  const env = { toolPermission: { mode: "ask" }, permissionSavingRef: { current: false }, useCallback: callback => callback, selectedProject: null, projectlessCwd: "F:/workspace", selectedModel: null, launchReady: false, systemPromptSelection: null,
+  const env = { gitBusyRef: { current: false }, worktree: null, t: key => key, changeGitBusy: () => {}, toolPermission: { mode: "ask" }, permissionSavingRef: { current: false }, useCallback: callback => callback, selectedProject: null, projectlessCwd: "F:/workspace", selectedModel: null, launchReady: false, systemPromptSelection: null,
     createLaunchId: () => "launch-id", persistentChatInputOptions, savePendingPrompt: async record => calls.push(["saved", record]), onLaunch: request => calls.push(["launch", request]) };
   const js = ts.transpileModule(callbacks, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const send = new Function("env", `with(env) { ${js}; return handleLandingSend; }`)(env);
@@ -66,7 +67,7 @@ test("the new-task composer exposes workflows and durably hands off the selected
   assert.match(picker, /sendDisabled=\{!laboratory.ready/);
   const callbacks = picker.slice(picker.indexOf("  const handleLandingSend = useCallback"), picker.indexOf("  const modelsUnavailable"));
   const calls = [];
-  const env = { toolPermission: { mode: "auto" }, permissionSavingRef: { current: false }, useCallback: callback => callback, selectedProject: null, projectlessCwd: "F:/workspace", selectedModel: { provider: "fixture", id: "fixture" }, launchReady: true, systemPromptSelection: { mode: "default" },
+  const env = { gitBusyRef: { current: false }, worktree: null, t: key => key, changeGitBusy: () => {}, toolPermission: { mode: "auto" }, permissionSavingRef: { current: false }, useCallback: callback => callback, selectedProject: null, projectlessCwd: "F:/workspace", selectedModel: { provider: "fixture", id: "fixture" }, launchReady: true, systemPromptSelection: { mode: "default" },
     createLaunchId: () => "workflow-launch", persistentChatInputOptions, savePendingPrompt: async record => calls.push(["saved", record]), onLaunch: request => calls.push(["launch", request]) };
   const js = ts.transpileModule(callbacks, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const send = new Function("env", `with(env) { ${js}; return handleLandingSend; }`)(env);
@@ -89,7 +90,7 @@ test("new tasks start from one production composer with progressive context cont
   assert.match(picker, /<NewSessionLauncher/);
   assert.match(picker, /<ChatInput/);
   assert.match(picker, /variant="launcher"/);
-  assert.match(picker, /contextControl=\{projectControl\}/);
+  assert.match(picker, /contextControl=\{\([\s\S]*?<NewSessionContextMenu/);
   assert.match(picker, /toolbarControl=\{\(\s*<SystemPromptSelector[\s\S]*?selection=\{systemPromptSelection\}[\s\S]*?onChange=\{setSystemPromptSelection\}/);
   assert.doesNotMatch(picker, /<textarea|<select|stepNumber|会话准备|准备好模型和项目/);
   assert.match(launcher, /t\("newSession\.title"\)/);
@@ -124,9 +125,9 @@ test("new conversations default to projectless and keep workspace selection opti
   assert.match(picker, /fetch\("\/api\/chat-workspace"/);
   assert.match(picker, /const \[selectedProject, setSelectedProject\] = useState<ProjectChoice \| null>\(null\)/);
   assert.match(picker, /const cwd = selectedProject\?\.cwd \?\? projectlessCwd/);
-  assert.match(picker, /projectRoot: selectedProject\?\.root \?\? null/);
-  assert.match(picker, /const chooseProjectless = useCallback/);
-  assert.match(picker, /t\("newSession\.projectless"\)/);
+  assert.match(picker, /let projectRoot = selectedProject\?\.root \?\? null/);
+  assert.match(contextMenu, /onClick=\{\(\) => choose\(null\)\}/);
+  assert.match(contextMenu, /t\("newSession\.projectless"\)/);
   assert.doesNotMatch(picker, /setSubmitAfterProjectSelection|setProjectRequired/);
   assert.match(launchTypes, /projectRoot: string \| null/);
   assert.match(shell, /if \(request\.projectRoot\)[\s\S]*?setActiveCwd\(null\)/);
@@ -144,7 +145,7 @@ test("new conversations default to projectless and keep workspace selection opti
   assert.match(picker, /const modelsUnavailable = !modelsLoading && models\.length === 0/);
   assert.match(picker, /projectError \|\| \(!selectedProject && projectlessError\) \|\| modelsUnavailable/);
   assert.match(picker, /modelError=\{models\.length > 0 \? modelsError : null\}/);
-  assert.match(picker, /className=\{styles\.projectBackdrop\}/);
+  assert.match(contextMenu, /data-session-context-backdrop/);
 });
 
 test("project browsing is selection-only and cancellation preserves projectless mode", async () => {
