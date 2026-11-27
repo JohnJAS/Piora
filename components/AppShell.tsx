@@ -17,6 +17,8 @@ import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
 import type { NewSessionInitialPrompt, NewSessionLaunch } from "./new-session-types";
 import type { Tab } from "./TabBar";
 import type { RightPanelHandle, RightPanelTab } from "./workspace/RightPanel";
+import { RunChangesSummary } from "./workspace/RunChangesSummary";
+import { useRunFileChanges } from "./workspace/useRunFileChanges";
 import { AnswerLinkProvider } from "./AnswerLinkProvider";
 import { useAnswerLinkNavigation } from "@/hooks/useAnswerLinkNavigation";
 import type { RoomWorkspaceHandle } from "./RoomWorkspace";
@@ -303,6 +305,7 @@ export function AppShell() {
   // Keep the server and first client render identical. The persisted tab is
   // restored after hydration so React never has to replace this subtree.
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("home");
+  const [fileNavMode, setFileNavMode] = useState<"tree" | "run">("tree");
   const [restoredSideChatTab, setRestoredSideChatTab] = useState<SideChatTabId | null>(null);
   const showAnswerBrowser = useCallback(() => { setRightPanelTab("browser"); setRightPanelOpen(true); }, []);
   const answerNavigation = useAnswerLinkNavigation(
@@ -1639,6 +1642,7 @@ export function AppShell() {
       });
     });
     setActiveFileTabId(tabId);
+    setFileNavMode("tree");
     setRightPanelTab("files");
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
@@ -1782,6 +1786,23 @@ export function AppShell() {
     setRightPanelTab("review");
     setRightPanelOpen(true);
   }, [rightPanelOverlayMode]);
+
+  const runFileSessionId = selectedRoom ? roomPanelMember?.binding.sessionId ?? null : selectedSession?.id ?? null;
+  const runFileSessionRunning = runningTaskSnapshots.some(snapshot => snapshot.id === runFileSessionId
+    && (snapshot.runtime === "running" || snapshot.runtime === "stopping"));
+  const { snapshot: runFileChanges, reportStart: reportRunFileStart } = useRunFileChanges(
+    runFileSessionId, !settingsDialogOpen && (!selectedRoom || rightPanelOpen && rightPanelTab === "files"),
+    runFileSessionRunning, explorerRefreshKey,
+  );
+  const runFilesOpen = !shownSubagent && rightPanelOpen && rightPanelTab === "files" && fileNavMode === "run";
+  const toggleRunFiles = useCallback(() => {
+    if (runFilesOpen) { setRightPanelOpen(false); return; }
+    if (rightPanelOverlayMode) setSidebarOpen(false);
+    setSubagentSelection(undefined);
+    setFileNavMode("run");
+    setRightPanelTab("files");
+    setRightPanelOpen(true);
+  }, [rightPanelOverlayMode, runFilesOpen]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd;
@@ -3138,6 +3159,9 @@ export function AppShell() {
                 characterWallpaperActivity
                 onTaskControlsChange={handleTaskControlsChange}
                 onOpenTaskChanges={handleOpenTaskChanges}
+                onPromptStarted={reportRunFileStart}
+                runChangesSummary={runFileChanges && <RunChangesSummary key={`${runFileChanges.sessionId}:${runFileChanges.runId}`}
+                  snapshot={runFileChanges} expanded={runFilesOpen} onToggle={toggleRunFiles} />}
                 onRenameTask={handleTaskRename}
                 onExportTask={handleTaskExport}
                 onSlashCommandsChange={setPiSlashCommands}
@@ -3271,6 +3295,9 @@ export function AppShell() {
           onAnswerNavigationConsumed={answerNavigation.consume}
           activeTab={rightPanelTab}
           onActiveTabChange={setRightPanelTab}
+          fileNavMode={fileNavMode}
+          onFileNavModeChange={setFileNavMode}
+          runFileChanges={runFileChanges}
           maximized={rightPanelMaximized}
           onMaximizedChange={setRightPanelMaximized}
           onClosePanel={handleCloseRightPanel}

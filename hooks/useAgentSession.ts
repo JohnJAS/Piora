@@ -220,6 +220,7 @@ export interface UseAgentSessionOptions {
   newSessionInitialSystemPromptSelection?: SystemPromptSelection | null;
   newSessionInitialPermissionMode?: PermissionMode;
   onAgentEnd?: (sessionId: string) => void;
+  onPromptStarted?: (sessionId: string, runId: string, timestamp: number) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
@@ -454,7 +455,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     viewVisible = true,
     workflowEnabled = true,
     workflowReady = true,
-    session, newSessionCwd, newSessionInitialModel, newSessionInitialSystemPromptSelection, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionInitialModel, newSessionInitialSystemPromptSelection, onAgentEnd, onPromptStarted, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   } = opts;
 
@@ -1598,6 +1599,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setStatusClock(null);
     }
     switch (event.type) {
+      case "prompt_started":
+        if (typeof event.sessionId === "string" && typeof event.runId === "string" && typeof event.timestamp === "number") {
+          onPromptStarted?.(event.sessionId, event.runId, event.timestamp);
+        }
+        break;
       case "subagent_update":
         if (typeof event.parentSessionId === "string" && event.parentSessionId === sessionIdRef.current) {
           markSubagentChanged(event.parentSessionId);
@@ -1836,7 +1842,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
     }
-  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
+  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, onPromptStarted, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;
   applyConnectedStateRef.current = (sid, state) => {
     if (!state || sessionIdRef.current !== sid) return;

@@ -541,6 +541,7 @@ function promptSubmissionHarness(overrides = {}) {
     reviews: [], setToolReviews: update => { h.env.reviews = typeof update === "function" ? update(h.env.reviews) : update; },
     reduceAgentPhase: (_phase, event) => ({ kind: event.type }), isRunProgressEvent: () => true,
     handleExtensionUiRequest() {}, refreshContextUsage() {},
+    onPromptStarted: undefined,
     userMessageHasPromptMaterialMarker: () => false,
     normalizeToolCalls,
     promptErrorNoticesRef: { current: new PromptErrorNotices() }, getAssistantErrorMessage,
@@ -856,7 +857,8 @@ test("actual send keeps SSE open through a delayed prompt POST in both existing 
 });
 
 test("actual accepted prompt stays open through every nonterminal command state and missing receipts", async () => {
-  const h = promptSubmissionHarness();
+  const starts = [];
+  const h = promptSubmissionHarness({ onPromptStarted: (...start) => starts.push(start) });
   assert.equal(await h.handleSend("prepare the session"), true);
   const urls = [];
   h.env.fetch = async url => {
@@ -873,6 +875,9 @@ test("actual accepted prompt stays open through every nonterminal command state 
     await h.reconcileAgentState("session-a"); assert.deepEqual(h.calls, []);
   }
   h.handleAgentEvent({ type: "prompt_started", commandId: "cmd-current", runId: "server-run" });
+  assert.deepEqual(starts, [], "an incomplete event cannot replace the displayed run");
+  h.handleAgentEvent({ type: "prompt_started", commandId: "cmd-current", sessionId: "session-a", runId: "server-run", timestamp: 50 });
+  assert.deepEqual(starts, [["session-a", "server-run", 50]]);
   h.handleAgentEvent({ type: "agent_start" });
   h.env.response.state.runtime = "running";
   h.env.response.promptCommand = { commandId: "cmd-current", status: "completed" };

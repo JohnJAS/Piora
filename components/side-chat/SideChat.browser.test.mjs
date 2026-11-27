@@ -166,6 +166,9 @@ function App() {
               maximized={false}
               onMaximizedChange={noop}
               onClosePanel={() => setRightPanelOpen(false)}
+              fileNavMode="tree"
+              onFileNavModeChange={noop}
+              runFileChanges={null}
               fileTabs={[]}
               activeFileTabId={null}
               canReopenClosedFileTab={false}

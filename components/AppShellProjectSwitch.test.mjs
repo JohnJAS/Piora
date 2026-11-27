@@ -132,15 +132,18 @@ test("the file panel and new file tabs use the selected worktree before sidebar 
     [{}, activeCwd],
   ]) {
     let tabs = [];
+    let fileNavMode = "run";
     const noop = () => {};
     assert.equal(vm.runInNewContext(getCwd, {
       activeCwd, isMobile: false, newSessionCwd: null, effectiveNewSessionCwd: selection.newSessionCwd ?? null,
       selectedRoom: null, selectedSession: null, isProjectlessChatCwd: () => false, ...selection,
       file: `${expected ?? "F:\\scratch"}\\readme.md`, useCallback: callback => callback,
       setFileTabs: update => { tabs = update(tabs); }, setClosedFileTabs: noop,
+      setFileNavMode: mode => { fileNavMode = mode; },
       setActiveFileTabId: noop, setRightPanelTab: noop, setRightPanelOpen: noop,
     }), expected);
     assert.equal(tabs[0].cwd, expected ?? undefined);
+    assert.equal(fileNavMode, "tree", "opening a regular file leaves the per-run diff view");
   }
 });
 

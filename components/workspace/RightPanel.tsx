@@ -19,6 +19,7 @@ import { SSHPanel } from "./SSHPanel";
 import { PlanSidePanelTab } from "../workflow/PlanSidePanelTab";
 import { GoalSidePanelTab } from "../workflow/GoalSidePanelTab";
 import { RunChangesPane } from "./RunChangesPane";
+import { RunChangesDetail } from "./RunChangesDetail";
 import {
   dispatchFocusSideChatComposer,
   isSideChatTab,
@@ -35,6 +36,7 @@ import {
 } from "../side-chat/SideChatRightPanelSlots";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 import type { BrowserNavigationRequest } from "@/lib/answer-links";
+import type { PromptFileChanges } from "@/lib/prompt-file-changes";
 
 type StaticToolTab = "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony" | "plan" | "goal";
 export type RightPanelTab = "home" | StaticToolTab | SideChatTabId;
@@ -54,6 +56,9 @@ interface Props {
   maximized: boolean;
   onMaximizedChange: (maximized: boolean) => void;
   onClosePanel: () => void;
+  fileNavMode: "tree" | "run";
+  onFileNavModeChange: (mode: "tree" | "run") => void;
+  runFileChanges: PromptFileChanges | null;
   fileTabs: Tab[];
   activeFileTabId: string | null;
   canReopenClosedFileTab: boolean;
@@ -168,7 +173,7 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
   const [treeShare, setTreeShare] = useState(0.28);
   const [treeDrawerOpen, setTreeDrawerOpen] = useState(false);
   const [resizingTree, setResizingTree] = useState(false);
-  const [fileNavMode, setFileNavMode] = useState<"tree" | "run">("tree");
+  const [runSelection, setRunSelection] = useState<{ sessionId: string; runId: string; path: string } | null>(null);
   const [browserNavigation, setBrowserNavigation] = useState<BrowserNavigationRequest | undefined>();
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const firstLauncherRef = useRef<HTMLButtonElement | null>(null);
@@ -176,6 +181,8 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuRef = useRef<HTMLDivElement | null>(null);
   const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId, onOpenFile } = props;
+  const { fileNavMode, onFileNavModeChange: setFileNavMode, runFileChanges } = props;
+  const browsingRunFiles = fileNavMode === "run";
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addMenuPosition, setAddMenuPosition] = useState({ left: 8, top: 48, width: 278 });
   const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" || isSideChatTab(activeTab) ? [] : [activeTab]);
@@ -216,10 +223,12 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
     setTreeDrawerOpen(false);
   }, [onOpenFile]);
   const handleOpenReview = useCallback(() => onActiveTabChange("review"), [onActiveTabChange]);
-  const handleOpenRunFile = useCallback((path: string, name: string, options?: { modeHint?: "diff" }) => {
-    onOpenFile(path, name, options);
+  const selectedRunFile = runFileChanges?.files.find((file) => runSelection?.sessionId === runFileChanges.sessionId
+    && runSelection.runId === runFileChanges.runId && file.path === runSelection.path) ?? runFileChanges?.files[0];
+  const handleSelectRunFile = (path: string) => {
+    if (runFileChanges) setRunSelection({ sessionId: runFileChanges.sessionId, runId: runFileChanges.runId, path });
     setTreeDrawerOpen(false);
-  }, [onOpenFile]);
+  };
 
   const changeTreeWidth = (candidate: number) => {
     const width = filesRootRef.current?.getBoundingClientRect().width ?? 0;
@@ -266,7 +275,7 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
       (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true });
     },
     focusFileSearch: () => { setFileNavMode("tree"); setTreeDrawerOpen(true); requestAnimationFrame(() => explorerRef.current?.focusSearch()); },
-  }), [activeTab]);
+  }), [activeTab, setFileNavMode]);
 
   useEffect(() => { setAddMenuOpen(false); }, [active, activeTab]);
 
@@ -464,18 +473,19 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
     <section id="workspace-files" role="tabpanel" aria-labelledby="workspace-files-tab" hidden={activeTab !== "files"} className={styles.panel} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       {filesHasOpened ? <RenderErrorBoundary resetKey={`files:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}>
       <div ref={filesRootRef} className={styles.filesRoot} data-compact={compactFiles ? "true" : undefined} data-tree-open={treeDrawerOpen ? "true" : undefined} data-resizing={resizingTree ? "true" : undefined} style={{ position: "relative", display: "grid", height: "100%", minHeight: 0, minWidth: 0, gridTemplateColumns: compactFiles ? "40px minmax(0, 1fr)" : `${treeWidth}px ${TREE_HANDLE_WIDTH}px minmax(0, 1fr)` }}>
-        {compactFiles ? <button className={styles.fileTreeRail} type="button" aria-label={t("files.explorer")} aria-expanded={treeDrawerOpen} onClick={() => setTreeDrawerOpen((open) => !open)}><AliIcon name="folder-open" size={16} /></button> : null}
+        {compactFiles ? <button className={styles.fileTreeRail} type="button"
+          aria-label={t(browsingRunFiles ? "files.runFileList" : "files.explorer")}
+          title={t(browsingRunFiles ? "files.runFileList" : "files.explorer")} aria-controls="piora-file-explorer"
+          aria-expanded={treeDrawerOpen} onClick={() => setTreeDrawerOpen((open) => !open)}><AliIcon name={browsingRunFiles ? "diff" : "folder-open"} size={16} /></button> : null}
         {compactFiles && treeDrawerOpen ? <button className={styles.fileTreeBackdrop} type="button" aria-label={t("i18n.close")} onClick={() => setTreeDrawerOpen(false)} /> : null}
         <div id="piora-file-explorer" className={styles.explorer} style={{ gridColumn: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: compactFiles ? treeDrawerOpen ? "flex" : "none" : "flex", flexDirection: "column", ...(compactFiles ? { position: "absolute" as const, zIndex: 12, left: 40, top: 0, bottom: 0, width: "min(320px, calc(100% - 40px))", background: "var(--bg-panel)", boxShadow: "var(--shadow-popover)" } : {}) }}>
           <RunChangesPane
-            active={activeTab === "files"}
-            sessionId={props.sessionId}
-            sessionRunning={props.sessionRunning}
-            refreshKey={refreshKey}
+            runChanges={runFileChanges}
+            selectedRunFilePath={selectedRunFile?.path}
             fileNavMode={fileNavMode}
             onFileNavModeChange={setFileNavMode}
             onOpenReview={handleOpenReview}
-            onOpenRunFile={handleOpenRunFile}
+            onSelectRunFile={handleSelectRunFile}
           >
             {cwd ? <FileExplorer ref={explorerRef} cwd={cwd} selectedFilePath={selectedFilePath} onOpenFile={handleExplorerOpenFile} refreshKey={refreshKey} onAtMention={props.onMention} onAtMentions={props.onMentions} changesCollapsed /> : <div className={styles.empty}>{t("workspace.selectProject")}</div>}
           </RunChangesPane>
@@ -492,7 +502,9 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
           onPointerCancel={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
           onLostPointerCapture={() => setResizingTree(false)} />
         <div id="piora-file-viewer" className={styles.fileViewer} style={{ gridColumn: compactFiles ? 2 : 3, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <div className={styles.fileTabs} style={{ flex: "0 0 auto", minHeight: 36 }}><TabBar
+          {browsingRunFiles && <RunChangesDetail snapshot={runFileChanges} file={selectedRunFile}
+            active={active && activeTab === "files"} onOpenFile={handleExplorerOpenFile} />}
+          <div className={styles.fileTabs} hidden={browsingRunFiles}><TabBar
             tabs={fileTabs}
             activeTabId={activeFileTabId ?? ""}
             canReopenClosedTab={props.canReopenClosedFileTab}
@@ -503,12 +515,12 @@ export const RightPanel = memo(forwardRef<RightPanelHandle, Props>(function Righ
             onMoveTab={props.onMoveFileTab}
             onReopenClosedTab={props.onReopenClosedFileTab}
           /></div>
-          <div className={styles.fileBody} style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden" }}>{fileTabs.length ? fileTabs.map((tab) => (
+          <div className={styles.fileBody} hidden={browsingRunFiles}>{fileTabs.length ? fileTabs.map((tab) => (
             <FileViewerTabSlot
               key={tab.id}
               tab={tab}
               selected={tab.id === activeFileTabId}
-              panelActive={active && activeTab === "files"}
+              panelActive={active && activeTab === "files" && !browsingRunFiles}
               cwd={cwd}
               refreshKey={refreshKey}
               onDirtyChange={props.onDirtyChange}

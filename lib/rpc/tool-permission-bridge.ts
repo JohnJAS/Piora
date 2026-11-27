@@ -1,6 +1,7 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike } from "../pi-types";
 import { isSubagentTool } from "../subagent-types";
+import { recordPromptFileTouch } from "../prompt-file-changes";
 import { readEffectiveToolPermission, readToolApprovalSettings } from "../tool-approval-settings";
 import { ToolReviewController } from "../tool-permission-gate";
 import { isPermissionMode } from "../tool-permission-policy";
@@ -118,7 +119,14 @@ export class ToolPermissionBridge {
       // Delegation itself has no external effect; every actual child tool still
       // passes through the parent's ordinary permission controller below.
       if (isSubagentTool(event.toolName)) return active() && this.host.isToolAllowedByCapability(event.toolName) ? result : { block: true, reason: "Subagents are disabled." };
-      if (!readToolApprovalSettings().enabled) return active() ? result : { block: true, reason: "Operation cancelled." };
+      const allowActiveTool = async () => {
+        const filePath = (event.input as { path?: unknown } | undefined)?.path;
+        if (active() && (event.toolName === "write" || event.toolName === "edit") && typeof filePath === "string") {
+          await recordPromptFileTouch(owner.host.sessionId, filePath, this.host.getCwd());
+        }
+        return active() ? result : { block: true, reason: "Operation cancelled." };
+      };
+      if (!readToolApprovalSettings().enabled) return allowActiveTool();
       const reviews = owner.reviews();
       const allowed = await reviews.authorize({
         name: event.toolName,
@@ -142,7 +150,7 @@ export class ToolPermissionBridge {
           owner.host.releaseToolApprovals();
         },
       });
-      return allowed ? result : { block: true, ...(reviews.stopped ? { terminate: true } : {}), reason: "Tool operation was declined, invalidated or cancelled. Do not retry through another tool." };
+      return allowed ? allowActiveTool() : { block: true, ...(reviews.stopped ? { terminate: true } : {}), reason: "Tool operation was declined, invalidated or cancelled. Do not retry through another tool." };
     };
   }
 }

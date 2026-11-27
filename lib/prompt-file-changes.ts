@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { getRuntimeAgentDataDirectory } from "./runtime-home";
 import { parseGitPorcelainV1 } from "./git-status";
 import type { PromptRunIdentity } from "./prompt-run-registry";
+import { buildRunFilePatch, decodeRunText, MAX_RUN_PATCH_BYTES, MAX_RUN_PATCH_FILES, MAX_RUN_TEXT_SNAPSHOT_BYTES, readRunText } from "./file-changes/run-patch";
 
 const execFileAsync = promisify(execFile);
 const MAX_FILES = 5000;
@@ -20,6 +21,9 @@ const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", "coverag
 export interface PromptFileChange {
   path: string;
   kind: "added" | "modified" | "deleted";
+  additions?: number;
+  deletions?: number;
+  patchRevision?: string;
 }
 
 export interface PromptFileChanges {
@@ -33,11 +37,15 @@ export interface PromptFileChanges {
   files: PromptFileChange[];
 }
 
+type RecordedPromptFileChange = PromptFileChange & { patch?: string };
+type RecordedPromptFileChanges = Omit<PromptFileChanges, "files"> & { files: RecordedPromptFileChange[] };
+
 interface Snapshot {
   root: string;
   git: boolean;
   gitHash?: "sha1" | "sha256";
   versions: Map<string, string>;
+  texts: Map<string, string>;
   dirtyPaths?: Set<string>;
   partial: boolean;
 }
@@ -49,17 +57,20 @@ export interface PromptFileCapture {
   startedAt: number;
   cwd: string;
   touchedPaths: Set<string>;
+  touchedPending: Map<string, Promise<void>>;
   touchedBaselines: Map<string, string>;
-  liveCache?: { at: number; record: PromptFileChanges };
-  liveInflight?: Promise<PromptFileChanges>;
+  touchedTexts: Map<string, string>;
+  touchedBudget: FingerprintBudget;
+  liveCache?: { at: number; record: RecordedPromptFileChanges };
+  liveInflight?: Promise<RecordedPromptFileChanges>;
 }
 
 declare global {
-  var __pioraActivePromptFileChanges: Map<string, PromptFileChanges> | undefined;
+  var __pioraActivePromptFileChanges: Map<string, RecordedPromptFileChanges> | undefined;
   var __pioraActivePromptFileCaptures: Map<string, PromptFileCapture> | undefined;
 }
 
-function getActive(): Map<string, PromptFileChanges> {
+function getActive(): Map<string, RecordedPromptFileChanges> {
   return globalThis.__pioraActivePromptFileChanges ??= new Map();
 }
 
@@ -72,7 +83,7 @@ function storagePath(sessionId: string): string {
   return path.join(getRuntimeAgentDataDirectory(), "piora", "prompt-file-changes", `${key}.json`);
 }
 
-async function persist(record: PromptFileChanges): Promise<void> {
+async function persist(record: RecordedPromptFileChanges): Promise<void> {
   const target = storagePath(record.sessionId);
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
@@ -81,26 +92,44 @@ async function persist(record: PromptFileChanges): Promise<void> {
   catch (error) { await fs.rm(temporary, { force: true }); throw error; }
 }
 
-function diffSnapshots(before: Snapshot, after: Snapshot, capture: PromptFileCapture): PromptFileChange[] {
-  const files: PromptFileChange[] = [];
+async function diffSnapshots(before: Snapshot, after: Snapshot, capture: PromptFileCapture): Promise<RecordedPromptFileChange[]> {
+  const files: RecordedPromptFileChange[] = [];
+  let patchBytes = 0;
   for (const file of new Set([...before.versions.keys(), ...after.versions.keys(), ...capture.touchedPaths])) {
     const oldVersion = before.versions.get(file) ?? capture.touchedBaselines.get(file);
     const newVersion = after.versions.get(file);
     if (oldVersion === newVersion) continue;
     if ((oldVersion === undefined || oldVersion === "missing") && (newVersion === undefined || newVersion === "missing")) continue;
-    files.push({
+    const change: RecordedPromptFileChange = {
       path: file,
       kind: newVersion === undefined || newVersion === "missing"
         ? "deleted"
         : oldVersion === undefined || oldVersion === "missing"
           ? "added"
           : "modified",
-    });
+    };
+    if (files.length < MAX_RUN_PATCH_FILES && patchBytes < MAX_RUN_PATCH_BYTES) {
+      const [original, edited] = await Promise.all([
+        readRunText(before.root, oldVersion, before.texts.get(file) ?? capture.touchedTexts.get(file)),
+        readRunText(after.root, newVersion, after.texts.get(file)),
+      ]);
+      const detail = original !== undefined && edited !== undefined
+        ? buildRunFilePatch(after.root, file, original, edited, change.kind)
+        : undefined;
+      if (detail) {
+        const size = Buffer.byteLength(detail.patch);
+        if (patchBytes + size <= MAX_RUN_PATCH_BYTES) {
+          patchBytes += size;
+          Object.assign(change, detail, { patchRevision: createHash("sha256").update(detail.patch).digest("hex").slice(0, 16) });
+        }
+      }
+    }
+    files.push(change);
   }
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function readPromptFileChanges(sessionId: string): Promise<PromptFileChanges | null> {
+export async function readPromptFileChanges(sessionId: string): Promise<RecordedPromptFileChanges | null> {
   const running = getActive().get(sessionId);
   if (running) {
     const capture = getCaptures().get(sessionId);
@@ -112,11 +141,12 @@ export async function readPromptFileChanges(sessionId: string): Promise<PromptFi
         capture.liveInflight = (async () => {
           const before = capture.initialSettled!;
           const after = await snapshot(capture.cwd, before, capture.touchedPaths);
-          const record: PromptFileChanges = {
+          const files = await diffSnapshots(before, after, capture);
+          const record: RecordedPromptFileChanges = {
             ...running,
             status: "running",
-            partial: before.partial || after.partial,
-            files: diffSnapshots(before, after, capture),
+            partial: before.partial || after.partial || capture.touchedBudget.partial,
+            files,
           };
           if (getActive().get(sessionId)?.runId === running.runId && getActive().get(sessionId)?.status === "running") {
             capture.liveCache = { at: Date.now(), record };
@@ -131,7 +161,7 @@ export async function readPromptFileChanges(sessionId: string): Promise<PromptFi
     return running;
   }
   try {
-    const parsed = JSON.parse(await fs.readFile(storagePath(sessionId), "utf8")) as PromptFileChanges;
+    const parsed = JSON.parse(await fs.readFile(storagePath(sessionId), "utf8")) as RecordedPromptFileChanges;
     if (parsed.sessionId !== sessionId) return null;
     // An in-progress record left on disk after a process restart has no live
     // capture to finish it. Make that gap explicit instead of showing a spinner.
@@ -163,7 +193,13 @@ function safeAbsolute(root: string, relative: string): string | null {
   return absolute;
 }
 
-async function fingerprint(file: string, budget: { remaining: number; partial: boolean }, gitHash?: "sha1" | "sha256"): Promise<string> {
+interface FingerprintBudget {
+  remaining: number;
+  textRemaining: number;
+  partial: boolean;
+}
+
+async function fingerprint(root: string, file: string, budget: FingerprintBudget, texts: Map<string, string>, gitHash?: "sha1" | "sha256"): Promise<string> {
   try {
     const stat = await fs.lstat(file);
     if (!stat.isFile()) { budget.partial = true; return "missing"; }
@@ -171,8 +207,17 @@ async function fingerprint(file: string, budget: { remaining: number; partial: b
       budget.partial = true;
       return `metadata:${stat.size}:${stat.mtimeMs}`;
     }
+    const realFile = safeAbsolute(root, await fs.realpath(file));
+    if (!realFile) { budget.partial = true; return "missing"; }
     budget.remaining -= stat.size;
-    const data = await fs.readFile(file);
+    const data = await fs.readFile(realFile);
+    if (data.length <= budget.textRemaining) {
+      const text = decodeRunText(data);
+      if (text !== undefined) {
+        budget.textRemaining -= data.length;
+        texts.set(file, text);
+      }
+    }
     return gitHash
       ? `git:${createHash(gitHash).update(`blob ${data.length}\0`).update(data).digest("hex")}`
       : createHash("sha256").update(data).digest("hex");
@@ -192,7 +237,9 @@ async function gitRoot(cwd: string): Promise<string | null> {
 async function gitPaths(root: string): Promise<{ paths: string[]; partial: boolean }> {
   const { stdout } = await execFileAsync("git", ["-C", root, "-c", "status.relativePaths=false", "status", "--porcelain=v1", "-z", "--untracked-files=all"], { timeout: 15000, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" });
   const entries = parseGitPorcelainV1(stdout);
-  const paths = [...new Set(entries.flatMap((entry) => [entry.path, ...(entry.originalPath ? [entry.originalPath] : [])]))];
+  // A staged-only entry already has the correct baseline in the index.
+  const paths = [...new Set(entries.filter((entry) => entry.worktreeStatus !== " ")
+    .flatMap((entry) => entry.worktreeStatus === "R" && entry.originalPath ? [entry.path, entry.originalPath] : [entry.path]))];
   return { paths: paths.slice(0, MAX_FILES), partial: paths.length > MAX_FILES };
 }
 
@@ -227,6 +274,7 @@ async function gitSnapshot(
   const gitHash = [...versions.values()].some((version) => version.length === 68) ? "sha256" : "sha1";
   const dirtyPaths = new Set<string>();
   const candidates = new Set<string>();
+  const texts = new Map<string, string>();
   for (const relative of listing.paths) {
     const absolute = safeAbsolute(root, relative);
     if (!absolute) continue;
@@ -240,22 +288,26 @@ async function gitSnapshot(
   if (previousDirtyPaths) {
     for (const previous of previousDirtyPaths) candidates.add(previous);
   }
-  const budget = { remaining: MAX_HASH_BYTES, partial: listing.partial || tracked.partial || candidates.size > MAX_FILES };
+  const budget = { remaining: MAX_HASH_BYTES, textRemaining: MAX_RUN_TEXT_SNAPSHOT_BYTES, partial: listing.partial || tracked.partial || candidates.size > MAX_FILES };
   let hashed = 0;
   for (const absolute of candidates) {
+    // Keep Git's normalized blob for clean tracked files, including CRLF
+    // checkouts. Explicitly touched ignored files are still fingerprinted.
+    if (versions.has(absolute) && !dirtyPaths.has(absolute)) continue;
     if (hashed >= MAX_FILES) {
       budget.partial = true;
       break;
     }
     hashed += 1;
-    versions.set(absolute, await fingerprint(absolute, budget, gitHash));
+    versions.set(absolute, await fingerprint(root, absolute, budget, texts, gitHash));
   }
-  return { root, git: true, gitHash, versions, dirtyPaths, partial: budget.partial };
+  return { root, git: true, gitHash, versions, texts, dirtyPaths, partial: budget.partial };
 }
 
 async function plainSnapshot(root: string, extraPaths: Iterable<string> = []): Promise<Snapshot> {
   const versions = new Map<string, string>();
-  const budget = { remaining: MAX_HASH_BYTES, partial: false };
+  const texts = new Map<string, string>();
+  const budget = { remaining: MAX_HASH_BYTES, textRemaining: MAX_RUN_TEXT_SNAPSHOT_BYTES, partial: false };
   const queue: Array<{ directory: string; depth: number }> = [{ directory: root, depth: 0 }];
   for (let index = 0; index < queue.length; index++) {
     const { directory, depth } = queue[index];
@@ -270,7 +322,7 @@ async function plainSnapshot(root: string, extraPaths: Iterable<string> = []): P
         else budget.partial = true;
       } else if (entry.isFile()) {
         if (versions.size >= MAX_FILES) { budget.partial = true; break; }
-        versions.set(absolute, await fingerprint(absolute, budget));
+        versions.set(absolute, await fingerprint(root, absolute, budget, texts));
       }
     }
     if (versions.size >= MAX_FILES) break;
@@ -278,10 +330,10 @@ async function plainSnapshot(root: string, extraPaths: Iterable<string> = []): P
   for (const raw of extraPaths) {
     const absolute = safeAbsolute(root, raw);
     if (absolute && !versions.has(absolute)) {
-      versions.set(absolute, await fingerprint(absolute, budget));
+      versions.set(absolute, await fingerprint(root, absolute, budget, texts));
     }
   }
-  return { root, git: false, versions, partial: budget.partial };
+  return { root, git: false, versions, texts, partial: budget.partial };
 }
 
 async function snapshot(cwd: string, initial?: Snapshot, touchedPaths?: ReadonlySet<string>): Promise<Snapshot> {
@@ -308,35 +360,36 @@ export async function recordPromptFileTouch(sessionId: string, rawPath: string, 
   if (!relativeFromRoot || relativeFromRoot === ".." || relativeFromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeFromRoot)) {
     return;
   }
-  const firstTouch = !capture.touchedPaths.has(candidate);
-  capture.touchedPaths.add(candidate);
-  capture.liveCache = undefined;
-  if (firstTouch && !capture.touchedBaselines.has(candidate)) {
-    const existing = initialSnap?.versions.get(candidate);
-    if (existing !== undefined) {
-      capture.touchedBaselines.set(candidate, existing);
-    } else {
-      const baseline = await fingerprint(
-        candidate,
-        { remaining: MAX_SINGLE_FILE_BYTES, partial: false },
-        initialSnap?.git ? (initialSnap.gitHash ?? "sha1") : undefined,
+  if (getCaptures().get(sessionId) !== capture || capture.touchedPaths.has(candidate)) return;
+  let pending = capture.touchedPending.get(candidate);
+  if (!pending) {
+    pending = (async () => {
+      const baseline = initialSnap?.versions.get(candidate) ?? await fingerprint(
+        allowedRoot, candidate, capture.touchedBudget, capture.touchedTexts, initialSnap?.gitHash,
       );
       capture.touchedBaselines.set(candidate, baseline);
-    }
+      capture.touchedPaths.add(candidate);
+      capture.liveCache = undefined;
+    })().finally(() => capture.touchedPending.delete(candidate));
+    capture.touchedPending.set(candidate, pending);
   }
+  await pending;
 }
 
 export function beginPromptFileChanges(identity: PromptRunIdentity, cwd: string): PromptFileCapture {
   const startedAt = Date.now();
-  const record: PromptFileChanges = { sessionId: identity.sessionId, runId: identity.runId, cwd, startedAt, status: "running", partial: false, files: [] };
+  const record: RecordedPromptFileChanges = { sessionId: identity.sessionId, runId: identity.runId, cwd, startedAt, status: "running", partial: false, files: [] };
   getActive().set(identity.sessionId, record);
   const capture: PromptFileCapture = {
     identity,
     cwd,
     startedAt,
     touchedPaths: new Set(),
+    touchedPending: new Map(),
     touchedBaselines: new Map(),
-    initial: Promise.resolve({ root: path.resolve(cwd), git: false, versions: new Map(), partial: false }),
+    touchedTexts: new Map(),
+    touchedBudget: { remaining: MAX_HASH_BYTES, textRemaining: MAX_RUN_TEXT_SNAPSHOT_BYTES, partial: false },
+    initial: Promise.resolve({ root: path.resolve(cwd), git: false, versions: new Map(), texts: new Map(), partial: false }),
   };
   getCaptures().set(identity.sessionId, capture);
   capture.initial = Promise.all([snapshot(cwd), persist(record).catch(() => {})]).then(([value]) => {
@@ -346,12 +399,13 @@ export function beginPromptFileChanges(identity: PromptRunIdentity, cwd: string)
   return capture;
 }
 
-export async function finishPromptFileChanges(capture: PromptFileCapture, status: "complete" | "aborted" | "error"): Promise<PromptFileChanges> {
+export async function finishPromptFileChanges(capture: PromptFileCapture, status: "complete" | "aborted" | "error"): Promise<RecordedPromptFileChanges> {
   const { identity, cwd, startedAt } = capture;
-  let result: PromptFileChanges;
+  let result: RecordedPromptFileChanges;
   try {
     const before = await capture.initial;
     const after = await snapshot(cwd, before, capture.touchedPaths);
+    const files = await diffSnapshots(before, after, capture);
     result = {
       sessionId: identity.sessionId,
       runId: identity.runId,
@@ -359,8 +413,8 @@ export async function finishPromptFileChanges(capture: PromptFileCapture, status
       startedAt,
       finishedAt: Date.now(),
       status,
-      partial: before.partial || after.partial,
-      files: diffSnapshots(before, after, capture),
+      partial: before.partial || after.partial || capture.touchedBudget.partial,
+      files,
     };
   } catch {
     result = { sessionId: identity.sessionId, runId: identity.runId, cwd, startedAt, finishedAt: Date.now(), status: "unavailable", partial: true, files: [] };
@@ -371,7 +425,10 @@ export async function finishPromptFileChanges(capture: PromptFileCapture, status
   }
   if (getActive().get(identity.sessionId)?.runId === identity.runId) {
     getActive().set(identity.sessionId, result);
-    try { await persist(result); getActive().delete(identity.sessionId); }
+    try {
+      await persist(result);
+      if (getActive().get(identity.sessionId) === result) getActive().delete(identity.sessionId);
+    }
     catch { /* Keep the result available in memory. */ }
   }
   return result;
