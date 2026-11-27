@@ -822,6 +822,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     <ChatInput
       ref={chatInputRef}
       replySource={replySource}
+      predictionActive={visible}
       variant={isEmptyNew ? "launcher" : "conversation"}
       placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
       contextControl={composerContextControl}

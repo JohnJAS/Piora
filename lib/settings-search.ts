@@ -98,6 +98,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
 
   { id: "conversation", section: "conversation", labelKey: "settings.conversation", descriptionKey: "settings.conversationDescription", keywords: ["chat", "session", "聊天", "会话"] },
   { id: "conversation.answerLinks", section: "conversation", labelKey: "settings.answerLinks", descriptionKey: "settings.answerLinksHelp", keywords: ["link", "browser", "链接", "浏览器", "打开方式"] },
+  { id: "conversation.inputPrediction", section: "conversation", labelKey: "prediction.title", descriptionKey: "prediction.description", keywords: ["predict", "ghost text", "Tab", "输入预测", "回复预测"] },
   { id: "conversation.replySuggestions", section: "conversation", labelKey: "reply.title", descriptionKey: "reply.description", keywords: ["chips", "quick replies", "提取", "快捷回复", "选项", "提示词"] },
   { id: "conversation.sendShortcut", section: "shortcuts", labelKey: "settings.sendShortcut", descriptionKey: "settings.sendShortcutDescription", keywords: ["enter", "ctrl enter", "发送", "换行"] },
   { id: "conversation.newlineShortcut", section: "shortcuts", labelKey: "settings.newlineShortcut", descriptionKey: "settings.newlineShortcutDescription", keywords: ["newline", "shift enter", "换行", "快捷键"] },

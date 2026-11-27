@@ -23,7 +23,11 @@ export async function writeComposerRecord(store: "drafts" | "replies", key: stri
   });
 }
 export async function cacheReply(key: string, result: ReplyResult) {
-  await writeComposerRecord("replies", key, { key, result, used: Date.now() });
+  await cacheComposerReply(key, { result });
+}
+
+export async function cacheComposerReply(key: string, payload: { result: ReplyResult } | { text: string }) {
+  await writeComposerRecord("replies", key, { key, ...payload, used: Date.now() });
   const db = await database();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("replies", "readwrite"), table = tx.objectStore("replies"), req = table.getAll();

@@ -11,6 +11,7 @@ import { ModelRetrySettings } from "../ModelRetrySettings";
 import { ReplySuggestionsSettings } from "../ReplySuggestionsSettings";
 import { RunningStatusSettings } from "../RunningStatusSettings";
 import { ToolApprovalSettings } from "../ToolApprovalSettings";
+import { InputPredictionSettings } from "./InputPredictionSettings";
 import {
   SettingsDisclosure,
   SettingsPage,
@@ -106,6 +107,7 @@ export function ConversationSettingsPage({
       </SettingsSection>
 
       <SettingsSection title={t("settings.section.assistance")}>
+        <InputPredictionSettings key={modelCwd} cwd={modelCwd} />
         <ReplySuggestionsSettings cwd={modelCwd} compact />
         <RunningStatusSettings cwd={modelCwd} compact />
       </SettingsSection>

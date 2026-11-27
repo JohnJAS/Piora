@@ -74,6 +74,7 @@ test('one chat settings page preserves controls, legacy entries and searchable t
         if (route.request().method() === 'PATCH') reserve = route.request().postDataJSON().settings.reserveTokens;
         return route.fulfill({ json: { reserveTokens: reserve ?? 16384, configuredReserveTokens: reserve } });
       }
+      if (url.pathname === '/api/models') return route.fulfill({ json: { models: {}, modelList: [{ provider: 'fixture', id: 'small', name: 'Small' }] } });
       if (url.pathname.startsWith('/api/')) return route.fulfill({ json: { enabled: false, templates: [], defaultTemplateId: null, settings: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: 60000 }, httpIdleTimeoutMs: 120000 }, modelList: [], models: [], files: [] } });
       return route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${css}body{margin:0}</style><div id="root"></div><script src="/bundle.js"></script>` });
     });
@@ -131,9 +132,25 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     assert.equal(approvalsEnabled, true);
     const groups = await page.getByRole('main').locator('section > div > h3').allTextContents();
     assert.deepEqual(groups, ['交互行为', '智能辅助', '执行与安全']);
-    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'conversation.answerLinks', 'conversation.replySuggestions', 'general.runningStatusLabel', 'models.fallback', 'general.modelRetry', 'models.compaction']) {
+    for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'conversation.answerLinks', 'conversation.inputPrediction', 'conversation.replySuggestions', 'general.runningStatusLabel', 'models.fallback', 'general.modelRetry', 'models.compaction']) {
       assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available on conversation page`);
     }
+    const prediction = page.locator('[data-settings-id="conversation.inputPrediction"]');
+    await prediction.getByText('已关闭', { exact: true }).waitFor();
+    await prediction.getByRole('button', { name: '配置输入预测' }).click();
+    const predictionPanel = page.getByRole('dialog', { name: '下一轮输入预测' });
+    const enablePrediction = predictionPanel.getByRole('switch', { name: '启用输入预测' });
+    assert.equal(await enablePrediction.isChecked(), false);
+    await enablePrediction.click();
+    const savePrediction = predictionPanel.getByRole('button', { name: '保存输入预测设置' });
+    assert.equal(await savePrediction.isDisabled(), true);
+    await predictionPanel.getByLabel('预测模型').selectOption({ label: 'fixture / Small' });
+    await savePrediction.click();
+    await prediction.getByText('已开启', { exact: true }).waitFor();
+    await page.reload();
+    await page.getByRole('button', { name: '对话与任务', exact: true }).click();
+    await prediction.getByText('已开启', { exact: true }).waitFor();
+
     await page.getByText('请求超时、重试与上下文压缩', { exact: true }).click();
     const compaction = page.locator('[data-settings-id="models.compaction"]');
     await compaction.getByRole('button', { name: '自定义', exact: true }).click();

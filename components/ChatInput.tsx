@@ -6,6 +6,7 @@ import type { ComposerActivity } from "@/lib/character-director-state";
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
 import { useReplySuggestions } from "@/hooks/useReplySuggestions";
+import { useInputPrediction } from "@/hooks/useInputPrediction";
 import { ReplySuggestionBar } from "./ReplySuggestionBar";
 import type { ReplySource } from "@/lib/reply-suggestions";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, SlashCommandInfo } from "@/hooks/useAgentSession";
@@ -102,6 +103,7 @@ export {
 
 interface Props {
   replySource?: ReplySource | null;
+  predictionActive?: boolean;
   onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], onDurable?: (clientPromptId?: string) => void, retryOfPromptIds?: string[], inputOptions?: ChatInputOptions) => boolean | void | Promise<boolean | void>;
   onQueueInput?: (message: string, images?: AttachedImage[], files?: AttachedFile[], onDurable?: (clientPromptId?: string) => void, inputOptions?: ChatInputOptions, retryOfPromptIds?: string[]) => Promise<boolean>;
   commandCatalog?: ChatCommandCatalog;
@@ -213,6 +215,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   toolPermission, permissionSaving, onToolPermissionChange, onCharacterActivity,
   surfacePlacement = "main", sideChatEnabled = false, canOpenSideChat = false, onOpenSideChat,
   replySource = null,
+  predictionActive = true,
 }: Props, ref) {
   const { t, locale } = useI18n();
   const { mode: defaultSendMode } = useRunningSendMode();
@@ -788,13 +791,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   }, []);
 
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    if (value) resizeComposerTextarea(ta);
-  }, [value]);
-
-  useEffect(() => {
     return () => {
       stopVoiceInput(true);
       promptOptimizerAbortRef.current?.abort();
@@ -1223,6 +1219,22 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       : Math.max(0, slashActiveIndex - 1);
   }, [filteredSlashCommands.length, slashActiveIndex]);
 
+  const prediction = useInputPrediction(
+    predictionActive && !sendingRef.current && (!draftKey || hydratedDraftKey === draftKey)
+      && !value && !attachedImages.length && !attachedFiles.length && !isProcessingImages && !isProcessingFiles
+      && !isStreaming && !isCompacting && !sendDisabled && !permissionSaving && !isAutoModelSelection
+      && !composerWorkflow.isGoalDrafting && !workflowAutoContinuing && !localVoiceRecording && !voiceTranscribing
+      ? replySource : null,
+    cwd, locale,
+  );
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    if (value || prediction) resizeComposerTextarea(ta);
+  }, [value, prediction]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       const nativeEvent = e.nativeEvent;
@@ -1368,6 +1380,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         return;
       }
 
+      if (prediction && e.key === "Tab" && !e.currentTarget.value && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+        && !historyMenuOpen && !slashMenuOpen && !atMenuOpen && !attachmentMenuOpen) {
+        e.preventDefault();
+        setValue(prediction);
+        return;
+      }
+
       if (matchesSendShortcut(e, newlineShortcut)) {
         e.preventDefault();
         const textarea = e.currentTarget;
@@ -1395,7 +1414,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       // Only the configured newline binding inserts a line break.
       if (e.key === "Enter") e.preventDefault();
     },
-    [isStreaming, isCommandInput, surfacePlacement, sideChatEnabled, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, selectSlashCommand, submitComposer, composerWorkflow, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, submitStreamingMessage, undoReplyDraft, sendShortcut, newlineShortcut, setValue, updateAtQuery, closeSendModeMenu, sendModeMenuRef, setAtActiveIndex, setAtMenuOpen]
+    [prediction, isStreaming, isCommandInput, surfacePlacement, sideChatEnabled, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, selectSlashCommand, submitComposer, composerWorkflow, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, submitStreamingMessage, undoReplyDraft, sendShortcut, newlineShortcut, setValue, updateAtQuery, closeSendModeMenu, sendModeMenuRef, setAtActiveIndex, setAtMenuOpen]
   );
 
   const handleInput = useCallback(() => {
@@ -1747,15 +1766,17 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             }}
             onInput={handleInput}
             onPaste={handlePaste}
+            aria-keyshortcuts={prediction ? "Tab" : undefined}
+            title={prediction ? t("prediction.acceptHint") : undefined}
             placeholder={
-              workflowAutoContinuing
+              prediction || (workflowAutoContinuing
                 ? t("workflow.goal.continuing")
                 : composerWorkflow.isGoalDrafting
                   ? t("workflow.goal.draftPlaceholder")
                   : (placeholder ?? (isStreaming && (onSteer || onFollowUp)
                     ? t("chat.steerPlaceholder")
                     : isStreaming ? t("chat.agentPlaceholder")
-                    : t("chat.messagePlaceholder")))
+                    : t("chat.messagePlaceholder"))))
             }
             data-goal-drafting={composerWorkflow.isGoalDrafting ? "true" : undefined}
             rows={composerWorkflow.isGoalDrafting ? 3 : 1}
