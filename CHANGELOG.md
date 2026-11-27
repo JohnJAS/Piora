@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.11-beta.34] - 2026-11-27
+
+### 修复
+
+- 修复聊天中本轮文件变更不易查看的问题。输入框上方实时显示变更文件数和可比较文本的增删行数，点击可逐个查看文件在本轮开始前后的差异。摘要可以手动隐藏，下一轮开始后会按新一轮的文件变更重新显示。
+
 ## [0.5.11-beta.33] - 2026-11-27
 
 ### 改进
