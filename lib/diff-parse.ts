@@ -70,13 +70,13 @@ export function parseUnifiedDiff(patch: string): ParsedDiff {
     if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
       current.binary = true; current.status = "binary"; current.headers.push(line); hunk = null; continue;
     }
-    if (line.startsWith("--- ")) {
+    if (!hunk && line.startsWith("--- ")) {
       current.oldPath = cleanPath(line.slice(4));
       if (current.oldPath === "/dev/null") current.status = "added";
       current.headers.push(line);
       continue;
     }
-    if (line.startsWith("+++ ")) {
+    if (!hunk && line.startsWith("+++ ")) {
       current.newPath = cleanPath(line.slice(4));
       if (current.newPath === "/dev/null") current.status = "deleted";
       current.headers.push(line);

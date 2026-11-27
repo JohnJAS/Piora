@@ -6,7 +6,7 @@ import { BrowserHandoffNotice } from "./BrowserHandoffNotice";
 import { latestReplySource } from "@/lib/reply-suggestions";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import type { HistoryChatControls } from "@/lib/history-navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentMessage, BashExecutionMessage, SessionInfo, SessionTreeNode, UserMessage } from "@/lib/types";
 import { prepareMessageRetry } from "@/lib/message-retry";
 import { messageFingerprint } from "@/lib/chat-history";
@@ -81,6 +81,8 @@ interface Props {
   characterWallpaperActivity?: boolean;
   onTaskControlsChange?: (controls: TaskControls | null) => void;
   onOpenTaskChanges?: () => void;
+  onPromptStarted?: (sessionId: string, runId: string, timestamp: number) => void;
+  runChangesSummary?: ReactNode;
   onRenameTask?: (name: string) => void | Promise<void>;
   onExportTask?: () => void;
   onSlashCommandsChange?: (commands: SlashCommandInfo[]) => void;
@@ -174,7 +176,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, characterWallpaperActivity = false, onTaskControlsChange, onOpenTaskChanges, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted, sideChatEnabled = false, onOpenSideChat }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, characterWallpaperActivity = false, onTaskControlsChange, onOpenTaskChanges, onPromptStarted, runChangesSummary, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted, sideChatEnabled = false, onOpenSideChat }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -247,7 +249,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     session, initialRunning, newSessionCwd, newSessionInitialModel,
     newSessionInitialSystemPromptSelection: initialPrompt?.systemPromptSelection ?? null,
     newSessionInitialPermissionMode: initialPrompt?.permissionMode,
-    onAgentEnd, onSessionCreated, onSessionForked,
+    onAgentEnd, onPromptStarted, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
@@ -1148,6 +1150,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               t={t}
             />
             <ExtensionWidgets widgets={belowEditorWidgets} />
+            {runChangesSummary}
           </div>
         </div>
         {chatInputElement}

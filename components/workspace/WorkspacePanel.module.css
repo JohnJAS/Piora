@@ -37,10 +37,10 @@
 .runSummary { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 9px 8px; color: var(--text-muted); font-size: var(--text-xs); }
 .runSummary button { padding: 3px 5px; border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; white-space: nowrap; }
 .runNotice,.runEmpty { padding: 10px; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.5; }
-.runScope { padding: 0 8px 8px; color: var(--text-dim); font-size: calc(var(--text-xs) * .92); line-height: 1.45; }
 .runNotice { background: var(--bg-hover); }
 .runFile { display: flex; align-items: center; gap: 6px; width: calc(100% - 10px); margin: 2px 5px; padding: 7px 6px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); cursor: pointer; font: inherit; text-align: left; }
 .runFile:hover,.runFile:focus-visible { background: var(--bg-hover); }
+.runFile[aria-current="true"] { background: var(--bg-selected); }
 .runFileCopy { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .runFileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runFileDir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: calc(var(--text-xs) * 0.9); }
@@ -62,6 +62,11 @@
 .filesRoot[data-compact="true"] .fileViewer { grid-column: 2; }
 .fileTabs { flex: 0 0 auto; border-bottom: 1px solid var(--border); min-height: 36px; }
 .fileBody { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.runDiff { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.runDiffHeader { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; min-height: 37px; padding: 4px 9px; border-bottom: 1px solid var(--border); background: var(--bg-panel); color: var(--text); font-size: var(--text-xs); }
+.runDiffHeader > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runDiffHeader button { flex: 0 0 auto; min-height: 25px; padding: 2px 7px; }
+.runDiffBody { flex: 1; min-height: 0; overflow: auto; }
 .empty { height: 100%; min-height: 80px; display: flex; align-items: center; justify-content: center; padding: 20px; color: var(--text-dim); text-align: center; }
 .reviewRoot { height: 100%; min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; background: var(--bg); color: var(--text); }
 .reviewToolbar { position: relative; z-index: 20; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px 0 13px; border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent); background: color-mix(in srgb, var(--bg) 96%, var(--surface-raised)); }
